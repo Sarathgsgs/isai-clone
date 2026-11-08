@@ -1,0 +1,6 @@
+{
+  "name": "Isai - Vinyl Turntable Music Player",
+  "description": "Analog vinyl turntable music player with realistic tonearm physics, 5-band equalizer, synced lyrics, and local audio library.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
