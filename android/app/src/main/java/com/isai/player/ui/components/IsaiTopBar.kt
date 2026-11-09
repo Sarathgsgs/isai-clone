@@ -14,8 +14,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.isai.player.R
@@ -34,11 +38,9 @@ fun IsaiTopBar(
         title = {
             if (title.equals("Isai", ignoreCase = true)) {
                 Text(
-                    text = androidx.compose.ui.text.buildAnnotatedString {
+                    text = buildAnnotatedString {
                         append("Isa")
-                        androidx.compose.ui.text.withStyle(
-                            androidx.compose.ui.text.SpanStyle(color = androidx.compose.ui.graphics.Color(0xFFFF8A3D))
-                        ) {
+                        withStyle(SpanStyle(color = Color(0xFFFF8A3D))) {
                             append("i")
                         }
                     },
@@ -105,4 +107,3 @@ private fun IsaiTopBarLightPreview() {
         }
     }
 }
-

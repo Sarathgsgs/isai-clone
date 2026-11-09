@@ -34,5 +34,8 @@ data class Track(
 
     val displayTitle: String
         get() = title.ifBlank { "Unknown Title" }
+
+    val artUri: String?
+        get() = artPath
 }
 

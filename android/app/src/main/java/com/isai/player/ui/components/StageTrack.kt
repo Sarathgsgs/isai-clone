@@ -24,6 +24,6 @@ fun com.isai.player.data.model.Track.toStageTrack(): StageTrack = StageTrack(
     artist = artist,
     album = album,
     year = year,
-    art = artPath ?: artUri
+    art = artPath
 )
 
