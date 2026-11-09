@@ -1,0 +1,71 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Ensure Gradlew Executable
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+          elif [ -f android/gradlew ]; then
+            cd android && chmod +x gradlew
+          fi
+
+      - name: Assemble Debug APK
+        run: |
+          if [ -f gradlew ]; then
+            ./gradlew assembleDebug --no-daemon
+          elif [ -f android/gradlew ]; then
+            cd android && ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: Locate and Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Isai-v1.3.0-Debug-APK
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: 'v1.3.0'
+          name: 'Isai Music Player v1.3.0'
+          body: |
+            ## 🎵 Isai Music Player v1.3.0
+            Download and install `app-debug.apk` directly on your Android phone!
+            
+            ### ✨ Features:
+            - Full-disc rotating vinyl picture platter
+            - Custom Isai logo & adaptive app icons
+            - Tonearm touch to pause/resume
+            - Draggable vinyl scrubbing
+            - One UI compact ascending/descending sorting
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/debug/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
