@@ -1,0 +1,54 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- Vinyl Disc Base -->
+    <path
+        android:fillColor="#16161B"
+        android:pathData="M60,60m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
+
+    <!-- Outer Rim Line -->
+    <path
+        android:strokeColor="#3A3E48"
+        android:strokeWidth="1.2"
+        android:pathData="M60,60m-52,0a52,52 0,1 1,104 0a52,52 0,1 1,-104 0" />
+
+    <!-- Grooves Rings -->
+    <path
+        android:strokeColor="#2A2E38"
+        android:strokeWidth="0.8"
+        android:pathData="M60,60m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0" />
+    <path
+        android:strokeColor="#242832"
+        android:strokeWidth="0.8"
+        android:pathData="M60,60m-38,0a38,38 0,1 1,76 0a38,38 0,1 1,-76 0" />
+    <path
+        android:strokeColor="#2A2E38"
+        android:strokeWidth="0.8"
+        android:pathData="M60,60m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <path
+        android:strokeColor="#222630"
+        android:strokeWidth="0.8"
+        android:pathData="M60,60m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+
+    <!-- Center Label (Accent Orange) -->
+    <path
+        android:fillColor="#FF8A3D"
+        android:pathData="M60,60m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0" />
+
+    <!-- Center Spindle Ring and Hole -->
+    <path
+        android:strokeColor="#A9AFBA"
+        android:strokeWidth="1"
+        android:pathData="M60,60m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+    <path
+        android:fillColor="#0B0B0E"
+        android:pathData="M60,60m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+
+    <!-- Stylized Musical Note on Label -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M57,54v9.5a3.5,3.5 0,1 1,-2.5,-3.3v-7.2l8,-2v8a3.5,3.5 0,1 1,-2.5,-3.3v-9.7z" />
+</vector>
+

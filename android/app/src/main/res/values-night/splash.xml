@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Isai.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0B0B0E</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Isai.Base</item>
+    </style>
+</resources>
+

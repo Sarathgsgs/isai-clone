@@ -1,0 +1,19 @@
+PROJECT: "Isai", an offline local-music player for Android with a vinyl disc and a working tonearm on the Now Playing screen.
+STACK: Kotlin, Jetpack Compose, Material 3, Navigation Compose (type-safe routes), Media3 (ExoPlayer, MediaSessionService / MediaLibraryService, MediaController), Room, DataStore (Preferences), Hilt, Coil, Palette, Coroutines/Flow, Glance. Package com.isai.player. minSdk 26, target/compile latest stable.
+ARCHITECTURE: MVVM with unidirectional data flow. ViewModels expose StateFlow<UiState>; one-shot events through Channel/SharedFlow. Composables are stateless where possible, with no business logic in UI. PlayerState from PlayerController is the single source of truth for playback UI (no parallel isPlaying flags in the UI).
+
+CORE RULES:
+- STRICTLY NO INTERNET PERMISSION. No network code, analytics, or ads. Completely offline.
+- No hardcoded strings (strings.xml) or colors (IsaiTheme tokens). Dark and light supported everywhere.
+- Per-frame animation uses graphicsLayer lambdas or draw-phase lambdas, never per-frame recomposition.
+- Lazy lists use stable keys. Every screen has @Preview for dark and light.
+- No new library outside the version catalog without asking.
+- Every task: write a plan artifact first and wait for approval, then implement, then run build, lint and tests, then report results (with screenshots for UI) and commit with a clear message.
+- Existing components (once approved): Tonearm, TonearmGeometry, TonearmState, VinylDisc, VinylDiscState, VinylStage, WaveformSeekBar, LyricsPanel, GlanceWidget.
+
+ADD-ON & ROUND-2 RULES:
+- Allowed new libraries (must justify in plan artifact): androidx.glance (appwidget, material3), and ONE tag-reading library for embedded lyrics if MediaMetadataRetriever cannot read them.
+- No DSP library needed (use android.media.audiofx).
+- Room schema changes need a proper migration and a committed schema JSON. No destructive migration.
+- Every new setting goes into SettingsRepository and the Settings screen, with strings in strings.xml.
+- All previously approved behavior (tonearm, disc, scrub ownership, notification, widget, lyrics) must keep working.

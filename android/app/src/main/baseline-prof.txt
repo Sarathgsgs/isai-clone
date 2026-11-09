@@ -1,0 +1,60 @@
+# Baseline Profile for Isai Music Player
+# ART ahead-of-time compilation rules for cold startup and smooth 60fps vinyl/tonearm rendering
+
+# Critical Application Startup
+Lcom/isai/player/IsaiApp;
+HSPLcom/isai/player/IsaiApp;->onCreate()V
+Lcom/isai/player/MainActivity;
+HSPLcom/isai/player/MainActivity;->onCreate(Landroid/os/Bundle;)V
+
+# Navigation and Shell
+Lcom/isai/player/ui/navigation/NavRoute;
+Lcom/isai/player/ui/navigation/NavRoute$Companion;
+HSPLcom/isai/player/ui/navigation/NavRoute;-><init>(Ljava/lang/String;)V
+Lcom/isai/player/ui/navigation/MainScaffoldKt;
+
+# Tonearm Physics, Geometry & Canvas Drawing (Critical 60/120 FPS draw loops)
+Lcom/isai/player/ui/components/TonearmGeometry;
+HSPLcom/isai/player/ui/components/TonearmGeometry;-><init>(Landroidx/compose/ui/geometry/Offset;FFFFF)V
+HSPLcom/isai/player/ui/components/TonearmGeometry;->trackAngle(F)F
+HSPLcom/isai/player/ui/components/TonearmGeometry;->progressFromAngle(F)F
+HSPLcom/isai/player/ui/components/TonearmGeometry;->isOnRecord(F)Z
+Lcom/isai/player/ui/components/TonearmState;
+HSPLcom/isai/player/ui/components/TonearmState;->displayAngle(F)F
+HSPLcom/isai/player/ui/components/TonearmState;->setDragging(Ljava/lang/Float;)V
+Lcom/isai/player/ui/components/TonearmKt;
+Lcom/isai/player/ui/components/TonearmColors;
+
+# Vinyl Disc Physics, Grooves & Shaders
+Lcom/isai/player/ui/components/VinylDiscState;
+HSPLcom/isai/player/ui/components/VinylDiscState;->currentAngle()F
+HSPLcom/isai/player/ui/components/VinylDiscState;->updateTarget(Z)V
+Lcom/isai/player/ui/components/VinylDiscKt;
+Lcom/isai/player/ui/components/VinylColors;
+Lcom/isai/player/ui/nowplaying/VinylStageKt;
+
+# Media Playback Engine & Controller
+Lcom/isai/player/playback/PlaybackService;
+HSPLcom/isai/player/playback/PlaybackService;->onCreate()V
+Lcom/isai/player/playback/PlayerController;
+HSPLcom/isai/player/playback/PlayerController;->getCurrentPosition()J
+HSPLcom/isai/player/playback/PlayerController;->getDuration()J
+HSPLcom/isai/player/playback/PlayerController;->play()V
+HSPLcom/isai/player/playback/PlayerController;->pause()V
+HSPLcom/isai/player/playback/PlayerController;->seekTo(J)V
+Lcom/isai/player/playback/PlayerState;
+
+# Room Persistence & In-Memory State
+Lcom/isai/player/data/database/IsaiDatabase;
+Lcom/isai/player/data/database/TrackDao;
+Lcom/isai/player/data/database/TrackEntity;
+Lcom/isai/player/data/repository/TrackRepository;
+Lcom/isai/player/data/repository/SettingsRepository;
+Lcom/isai/player/data/scanner/LibraryScanner;
+
+# Compose Drawing & Graphics Layer Primitives
+Landroidx/compose/ui/graphics/drawscope/DrawScope;
+Landroidx/compose/ui/graphics/graphicsLayer;
+Landroidx/compose/ui/graphics/Canvas;
+Landroidx/compose/ui/graphics/Path;
+

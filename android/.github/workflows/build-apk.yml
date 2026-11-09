@@ -1,0 +1,74 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Ensure Gradlew Executable
+        run: chmod +x gradlew
+
+      - name: Assemble Debug APK
+        run: |
+          ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log || true
+          if [ ! -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            KOTLIN_ERRS=$(grep -E "(^e: |Compilation error|failed with an exception)" build.log | head -n 20 | tr '\n' ' ' | cut -c 1-800)
+            FAIL_ERR=$(grep -A 10 "What went wrong:" build.log | tr '\n' ' ' | cut -c 1-600)
+            echo "::error title=KotlinErrors::$KOTLIN_ERRS"
+            echo "::error title=WhatWentWrong::$FAIL_ERR"
+            exit 1
+          fi
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Isai-v1.3.0-Debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Create or Update GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: 'v1.3.0'
+          name: 'Isai Music Player v1.3.0'
+          body: |
+            ## 🎵 Isai Offline Music Player v1.3.0
+            
+            Download and install the APK directly on your Android phone!
+            
+            ### ✨ What's New in v1.3.0:
+            - **Picture Disc Vinyl Platter**: Full-bleed rotating album art across the disc with concentric groove overlay & specular lighting.
+            - **New App Logo**: Official high-contrast Isai note emblem with vinyl orange accent.
+            - **Tonearm Touch Controls**: Tap anywhere along the tonearm to effortlessly toggle between playing and paused.
+            - **Draggable Vinyl Scrubbing**: Drag across the spinning record to scrub audio smoothly.
+            - **One UI Compact Sorting**: Click the arrow to toggle Ascending/Descending; click the label to cycle Date Added -> Name -> Artist.
+            - **Top Bar Branding**: Polished header with orange highlighted final letter (`Isa` in white, `i` in orange).
+            
+            ### 📲 Installation Instructions:
+            1. Download `app-debug.apk` directly on your Android phone below.
+            2. Open the file and allow "Install from unknown sources" if prompted.
+            3. Enjoy high-fidelity offline vinyl listening!
+          files: app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
