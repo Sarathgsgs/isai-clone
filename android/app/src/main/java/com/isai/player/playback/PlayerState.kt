@@ -38,6 +38,12 @@ data class PlayerState(
             0f
         }
 
+    val queueIndex: Int
+        get() = currentQueueIndex
+
+    val positionMs: Long
+        get() = currentPositionMs
+
     val hasTrack: Boolean
         get() = currentTrack != null
 

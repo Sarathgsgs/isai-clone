@@ -3,7 +3,7 @@ package com.isai.player.playback.car
 import com.isai.player.data.db.dao.AlbumDao
 import com.isai.player.data.db.dao.ArtistDao
 import com.isai.player.data.db.dao.TrackDao
-import com.isai.player.data.db.entity.toDomain
+import com.isai.player.data.model.toDomain
 import com.isai.player.data.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first

@@ -72,7 +72,7 @@ class ArtistDetailViewModel @Inject constructor(
                     sampleArtPath = sampleArt,
                     albums = albumSummaries,
                     tracks = tracks,
-                    favoriteTrackIds = favIds,
+                    favoriteTrackIds = favIds.toSet(),
                     isLoading = false
                 )
             }

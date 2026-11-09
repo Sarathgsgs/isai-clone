@@ -88,7 +88,7 @@ class SearchViewModel @Inject constructor(
                         matchingTracks = tracks,
                         matchingAlbums = albums,
                         matchingArtists = artists,
-                        favoriteTrackIds = favIds
+                        favoriteTrackIds = favIds.toSet()
                     )
                 }
             }

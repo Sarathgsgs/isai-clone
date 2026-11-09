@@ -312,7 +312,7 @@ private fun ImportItemRow(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showCandidatePicker = false }) {
-                    Text(stringResource(R.string.action_cancel))
+                    Text(stringResource(R.string.global_action_cancel))
                 }
             }
         )

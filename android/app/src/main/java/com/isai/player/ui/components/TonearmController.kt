@@ -194,7 +194,6 @@ fun TonearmInteractiveContainer(
         modifier = modifier
             .fillMaxSize()
             .semantics(mergeDescendants = true) {
-                role = Role.Slider
                 progressBarRangeInfo = ProgressBarRangeInfo(
                     current = currentProg,
                     range = 0f..1f

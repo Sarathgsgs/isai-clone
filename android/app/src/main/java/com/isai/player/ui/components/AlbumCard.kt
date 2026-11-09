@@ -35,6 +35,21 @@ import com.isai.player.ui.theme.IsaiTheme
 
 @Composable
 fun AlbumCard(
+    album: com.isai.player.data.model.Album,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AlbumCard(
+        title = album.title,
+        subtitle = album.artist,
+        artUri = album.artPath,
+        onClick = onClick,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun AlbumCard(
     title: String,
     subtitle: String,
     artUri: Any?,

@@ -33,12 +33,14 @@ fun IsaiTopBar(
     TopAppBar(
         title = {
             if (title.equals("Isai", ignoreCase = true)) {
-                androidx.compose.material3.Text(
+                Text(
                     text = androidx.compose.ui.text.buildAnnotatedString {
                         append("Isa")
-                        pushStyle(androidx.compose.ui.text.SpanStyle(color = androidx.compose.ui.graphics.Color(0xFFFF8A3D)))
-                        append("i")
-                        pop()
+                        androidx.compose.ui.text.withStyle(
+                            androidx.compose.ui.text.SpanStyle(color = androidx.compose.ui.graphics.Color(0xFFFF8A3D))
+                        ) {
+                            append("i")
+                        }
                     },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,

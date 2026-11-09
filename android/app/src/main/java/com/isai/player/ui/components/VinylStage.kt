@@ -86,13 +86,14 @@ fun StageBackground(
             )
         } else {
             // Light theme: pale vertical gradient tinted by accent
+            val bgColor = IsaiTheme.colors.background
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
                             accent.copy(alpha = 0.12f),
-                            IsaiTheme.colors.background.copy(alpha = 0.95f),
-                            IsaiTheme.colors.background
+                            bgColor.copy(alpha = 0.95f),
+                            bgColor
                         )
                     )
                 )

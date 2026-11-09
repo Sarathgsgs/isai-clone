@@ -55,3 +55,7 @@ data class VinylColors(
         }
     }
 }
+
+@Composable
+fun rememberVinylColors(): VinylColors = VinylColors.current()
+

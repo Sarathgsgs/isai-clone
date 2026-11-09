@@ -54,7 +54,7 @@ class PlaylistDetailViewModel @Inject constructor(
                     tracks = tracks,
                     allLibraryTracks = allTracks,
                     totalDurationMs = tracks.sumOf { it.durationMs },
-                    favoriteTrackIds = favIds,
+                    favoriteTrackIds = favIds.toSet(),
                     isLoading = false
                 )
             }

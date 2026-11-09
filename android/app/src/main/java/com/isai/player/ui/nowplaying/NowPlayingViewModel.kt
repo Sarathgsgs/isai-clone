@@ -20,6 +20,7 @@ import com.isai.player.playback.PlayerState
 import com.isai.player.playback.RepeatMode
 import com.isai.player.ui.components.StageTrack
 import com.isai.player.ui.components.SwipeDirection
+import com.isai.player.ui.components.toStageTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,7 +54,7 @@ class NowPlayingViewModel @Inject constructor(
 
     val playerState: StateFlow<PlayerState> = playerController.playerState
 
-    val stageTrack: StateFlow<StageTrack?> = playerState.map { state ->
+    val stageTrack: StateFlow<StageTrack?> = playerState.map { state: PlayerState ->
         state.currentTrack?.toStageTrack()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 

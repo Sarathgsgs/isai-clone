@@ -339,4 +339,30 @@ class PlayerController @Inject constructor(
     fun cancelSleepTimer() {
         sleepTimer.cancel { setVolume(1f) }
     }
+
+    fun toggleShuffle() {
+        setShuffleModeEnabled(!_playerState.value.shuffleModeEnabled)
+    }
+
+    fun setRepeatMode(mode: RepeatMode) {
+        val player = mediaController ?: return
+        val exoMode = when (mode) {
+            RepeatMode.OFF -> androidx.media3.common.Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> androidx.media3.common.Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> androidx.media3.common.Player.REPEAT_MODE_ONE
+        }
+        player.repeatMode = exoMode
+    }
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        reorderQueue(fromIndex, toIndex)
+    }
+
+    fun playTrackAtIndex(index: Int) {
+        val player = mediaController ?: return
+        if (index in 0 until player.mediaItemCount) {
+            player.seekToDefaultPosition(index)
+            player.play()
+        }
+    }
 }

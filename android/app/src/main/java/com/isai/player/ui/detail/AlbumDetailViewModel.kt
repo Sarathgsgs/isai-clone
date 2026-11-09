@@ -59,7 +59,7 @@ class AlbumDetailViewModel @Inject constructor(
                     tracks = tracks,
                     discGroups = groups,
                     totalDurationMs = totalDuration,
-                    favoriteTrackIds = favIds,
+                    favoriteTrackIds = favIds.toSet(),
                     isLoading = false
                 )
             }

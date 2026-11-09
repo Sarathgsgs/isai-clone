@@ -40,6 +40,7 @@ val LightScrim = Color(0x330F1535)
 @Immutable
 data class IsaiColors(
     val accent: Color,
+    val onAccent: Color = Color.White,
     val background: Color,
     val surface: Color,
     val surfaceVariant: Color,

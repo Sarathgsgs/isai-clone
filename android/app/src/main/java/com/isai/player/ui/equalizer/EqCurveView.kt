@@ -40,6 +40,7 @@ fun EqCurveView(
 
     val effectiveMaxRange = maxOf(abs(minLevelMilliBels), abs(maxLevelMilliBels), 1500)
     val curveColor = if (enabled) accentColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    val surfaceColor = MaterialTheme.colorScheme.surface
 
     Canvas(
         modifier = modifier
@@ -192,7 +193,7 @@ fun EqCurveView(
             )
             // Inner core
             drawCircle(
-                color = if (enabled) MaterialTheme.colorScheme.surface else curveColor,
+                color = if (enabled) surfaceColor else curveColor,
                 radius = if (isDragging) 6.dp.toPx() else 4.dp.toPx(),
                 center = pt
             )

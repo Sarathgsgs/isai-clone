@@ -1,4 +1,4 @@
-name: Build and Release APK
+name: Build and Release Android APK
 
 on:
   push:
@@ -19,31 +19,96 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Ensure Gradlew Executable
-        run: chmod +x gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Assemble Debug APK
+      - name: Locate Gradle Project and Assemble APK
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log || true
-          if [ ! -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            KOTLIN_ERRS=$(grep -E "(^e: |Compilation error|failed with an exception)" build.log | head -n 20 | tr '\n' ' ' | cut -c 1-800)
-            FAIL_ERR=$(grep -A 10 "What went wrong:" build.log | tr '\n' ' ' | cut -c 1-600)
-            echo "::error title=KotlinErrors::$KOTLIN_ERRS"
-            echo "::error title=WhatWentWrong::$FAIL_ERR"
+          echo "=== Locating Gradle Project ==="
+          if [ -f "./gradlew" ]; then
+            GRADLE_DIR="."
+          elif [ -f "./android/gradlew" ]; then
+            GRADLE_DIR="./android"
+          else
+            GRADLE_DIR=$(find . -maxdepth 3 -name "gradlew" -not -path "*/.*" | head -n 1 | xargs -r dirname)
+          fi
+
+          if [ -z "$GRADLE_DIR" ] || [ ! -f "$GRADLE_DIR/gradlew" ]; then
+            echo "::error::Could not find 'gradlew' in repository! Checked root and subdirectories."
+            ls -la
             exit 1
           fi
+
+          echo "Found Gradle project in: $GRADLE_DIR"
+          cd "$GRADLE_DIR"
+
+          echo "Granting executable permissions to gradlew..."
+          chmod +x gradlew
+
+          echo "Running assembleDebug..."
+          set +e
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
+          GRADLE_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          if [ $GRADLE_EXIT -ne 0 ]; then
+            echo "=================================================="
+            echo "::error::Gradle build failed with exit code $GRADLE_EXIT"
+            echo "=================================================="
+
+            KOTLIN_ERRORS=$(grep -E "^e: " build.log || true)
+
+            echo "### ❌ Build Failure Summary" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$KOTLIN_ERRORS" ]; then
+              echo "#### Kotlin Compilation Errors:" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "$KOTLIN_ERRORS" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+
+              while IFS= read -r line; do
+                if [[ $line == e:* ]]; then
+                  echo "::error::$line"
+                fi
+              done <<< "$KOTLIN_ERRORS"
+            else
+              FAIL_SECTION=$(grep -A 30 "What went wrong:" build.log || tail -n 60 build.log)
+              echo "#### Error Output:" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "$FAIL_SECTION" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo ""
+            echo "=== Detailed compilation logs before failure ==="
+            grep -B 5 -A 20 -E "(compileDebugKotlin|kspDebugKotlin|Compilation error)" build.log | head -n 150 || tail -n 120 build.log
+            exit $GRADLE_EXIT
+          fi
+
+          echo "=== Locating Built APK ==="
+          APK_PATH=$(find . -type f -name "*debug*.apk" -o -name "app-debug.apk" | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::assembleDebug completed but no APK was found in build outputs."
+            exit 1
+          fi
+
+          echo "Found APK at: $GRADLE_DIR/$APK_PATH"
+          mkdir -p "$GITHUB_WORKSPACE/outputs"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/outputs/app-debug.apk"
+          echo "APK successfully staged at $GITHUB_WORKSPACE/outputs/app-debug.apk"
+          echo "### ✅ Build Succeeded!" >> $GITHUB_STEP_SUMMARY
+          echo "APK generated: \`outputs/app-debug.apk\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Isai-v1.3.0-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: outputs/app-debug.apk
           if-no-files-found: error
 
       - name: Create or Update GitHub Release with APK
@@ -69,6 +134,6 @@ jobs:
             1. Download `app-debug.apk` directly on your Android phone below.
             2. Open the file and allow "Install from unknown sources" if prompted.
             3. Enjoy high-fidelity offline vinyl listening!
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: outputs/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

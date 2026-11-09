@@ -1,0 +1,150 @@
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:6:39 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:34:71 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:40:54 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:46:53 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:52:55 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/playback/car/VoiceSearchResolver.kt:56:47 Unresolved reference 'toDomain'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:42:31 Argument type mismatch: actual type is 'androidx.compose.ui.Alignment.Vertical', but 'androidx.compose.ui.Alignment.Horizontal' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:45:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:48:30 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:52:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:54:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:56:35 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:58:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:62:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:64:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:66:35 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:67:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:72:13 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:73:13 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:75:41 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/EmptyState.kt:76:48 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:40:31 Argument type mismatch: actual type is 'androidx.compose.ui.Alignment.Vertical', but 'androidx.compose.ui.Alignment.Horizontal' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:43:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:44:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:48:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:49:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:51:35 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:52:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:70:31 Argument type mismatch: actual type is 'androidx.compose.ui.Alignment.Vertical', but 'androidx.compose.ui.Alignment.Horizontal' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:73:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:76:34 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:79:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:80:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:82:35 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:84:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:87:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:88:9 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:90:35 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:91:31 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:95:13 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:96:13 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:98:41 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/LoadingState.kt:99:48 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/Tonearm.kt:139:40 Unresolved reference 'asAndroidPath'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/TonearmController.kt:197:29 Unresolved reference 'Slider'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/VinylStage.kt:94:39 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/VinylStage.kt:95:39 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/VinylStageLabScreen.kt:188:17 Unresolved reference 'Box'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/VinylStageLabScreen.kt:193:21 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/VinylStageLabScreen.kt:320:40 Unresolved reference 'Color'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/WaveformSeekBar.kt:136:29 Unresolved reference 'Slider'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/components/WaveformSeekBar.kt:186:36 Unresolved reference 'changedToUp'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/AlbumDetailScreen.kt:68:38 Unresolved reference 'rememberVinylColors'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/AlbumDetailScreen.kt:225:23 Unresolved reference 'rememberVinylColors'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/AlbumDetailScreen.kt:341:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/AlbumDetailViewModel.kt:62:40 Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlin.collections.Set<kotlin.Long>' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:181:41 No parameter with name 'album' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:183:41 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:183:41 No value passed for parameter 'subtitle'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:183:41 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:205:25 No parameter with name 'track' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No parameter with name 'onMoreOptions' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'artist'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'durationMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'isPlaying'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:207:25 No value passed for parameter 'onMoreClick'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailScreen.kt:312:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/detail/ArtistDetailViewModel.kt:75:40 Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlin.collections.Set<kotlin.Long>' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/equalizer/EqCurveView.kt:195:52 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/equalizer/EqualizerScreen.kt:95:74 Unresolved reference 'cd_navigate_back'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/equalizer/EqualizerScreen.kt:475:22 Unresolved reference 'androidx'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/equalizer/EqualizerScreen.kt:561:46 Unresolved reference 'action_save'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/equalizer/EqualizerScreen.kt:566:46 Unresolved reference 'action_cancel'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:115:25 No parameter with name 'track' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No parameter with name 'onMoreOptions' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'artist'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'durationMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'isPlaying'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:120:25 No value passed for parameter 'onMoreClick'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/favorites/FavoritesScreen.kt:204:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/home/HomeScreen.kt:137:49 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:365:25 No parameter with name 'track' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No parameter with name 'onMoreOptions' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'artist'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'durationMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'isPlaying'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:367:25 No value passed for parameter 'onMoreClick'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:399:21 No parameter with name 'album' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:400:21 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:400:21 No value passed for parameter 'subtitle'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/library/LibraryScreen.kt:400:21 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/ControlDial.kt:102:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/ControlDial.kt:114:45 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/LyricsView.kt:230:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/LyricsView.kt:322:49 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingScreen.kt:170:45 Unresolved reference 'queueIndex'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:56:58 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:56:62 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:57:29 Unresolved reference 'toStageTrack'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:112:51 Unresolved reference 'positionMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:138:39 Unresolved reference 'queueIndex'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:139:31 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:233:26 Unresolved reference 'toggleShuffle'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:242:26 Unresolved reference 'setRepeatMode'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:254:26 Unresolved reference 'moveQueueItem'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/NowPlayingViewModel.kt:258:26 Unresolved reference 'playTrackAtIndex'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/nowplaying/SleepTimerDialog.kt:103:61 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/playlists/M3uImportPreviewSheet.kt:315:50 Unresolved reference 'action_cancel'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/playlists/PlaylistDetailScreen.kt:402:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/playlists/PlaylistDetailViewModel.kt:57:40 Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlin.collections.Set<kotlin.Long>' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/playlists/TrackPickerBottomSheet.kt:186:67 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/playlists/TrackPickerBottomSheet.kt:224:53 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:160:37 No parameter with name 'album' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:162:37 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:162:37 No value passed for parameter 'subtitle'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:162:37 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:197:29 No parameter with name 'track' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No parameter with name 'onMoreOptions' found.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'title'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'artist'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'durationMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'artUri'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'isPlaying'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchScreen.kt:202:29 No value passed for parameter 'onMoreClick'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/search/SearchViewModel.kt:91:44 Argument type mismatch: actual type is 'kotlin.collections.List<kotlin.Long>', but 'kotlin.collections.Set<kotlin.Long>' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/settings/SettingsScreen.kt:208:70 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/settings/SettingsScreen.kt:338:70 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/settings/SettingsScreen.kt:521:65 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/settings/SettingsScreen.kt:528:62 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/settings/SettingsScreen.kt:647:70 Unresolved reference 'onAccent'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:83:54 Unresolved reference 'positionMs'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:119:2 Unresolved reference 'Composable'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:120:13 Functions which invoke @Composable functions must be marked with the @Composable annotation
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:125:5 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:141:2 Unresolved reference 'Composable'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:142:13 Functions which invoke @Composable functions must be marked with the @Composable annotation
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:150:5 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:164:48 Argument type mismatch: actual type is 'android.content.Intent', but 'android.content.ComponentName' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:244:2 Unresolved reference 'Composable'.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:245:13 Functions which invoke @Composable functions must be marked with the @Composable annotation
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:256:5 @Composable invocations can only happen from the context of a @Composable function
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/IsaiGlanceWidget.kt:273:52 Argument type mismatch: actual type is 'android.content.Intent', but 'android.content.ComponentName' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/WidgetArtRenderer.kt:60:51 Argument type mismatch: actual type is 'android.graphics.Paint', but 'kotlin.Float' was expected.
+e: file:///home/runner/work/isai-clone/isai-clone/android/app/src/main/java/com/isai/player/ui/widget/WidgetArtRenderer.kt:60:51 No value passed for parameter 'p3'.

@@ -1,7 +1,9 @@
 package com.isai.player.ui.widget
 
+import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -161,7 +163,7 @@ private fun MediumWidget(
             contentDescription = null,
             modifier = GlanceModifier
                 .size(76.dp)
-                .clickable(actionStartActivity(openAppIntent(context)))
+                .clickable(actionStartActivity(ComponentName(context, com.isai.player.MainActivity::class.java)))
         )
 
         Spacer(modifier = GlanceModifier.width(12.dp))
@@ -270,7 +272,7 @@ private fun LargeWidget(
                 contentDescription = null,
                 modifier = GlanceModifier
                     .size(110.dp)
-                    .clickable(actionStartActivity(openAppIntent(context)))
+                    .clickable(actionStartActivity(ComponentName(context, com.isai.player.MainActivity::class.java)))
             )
 
             Spacer(modifier = GlanceModifier.width(16.dp))

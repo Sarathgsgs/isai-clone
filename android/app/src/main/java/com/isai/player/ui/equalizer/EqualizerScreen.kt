@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -92,7 +93,7 @@ fun EqualizerScreen(
                     IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_navigate_back)
+                            contentDescription = stringResource(R.string.global_action_cancel)
                         )
                     }
                 },
@@ -472,7 +473,7 @@ private fun BandSliderItem(
                 enabled = enabled,
                 modifier = Modifier
                     .size(width = 140.dp, height = 28.dp)
-                    .androidx.compose.ui.draw.rotate(-90f),
+                    .rotate(-90f),
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
                     activeTrackColor = MaterialTheme.colorScheme.primary
@@ -558,12 +559,12 @@ private fun SavePresetDialog(
                 onClick = { if (presetName.isNotBlank()) onSave(presetName.trim()) },
                 enabled = presetName.isNotBlank()
             ) {
-                Text(stringResource(R.string.action_save))
+                Text(stringResource(R.string.equalizer_save_preset))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
+                Text(stringResource(R.string.global_action_cancel))
             }
         }
     )

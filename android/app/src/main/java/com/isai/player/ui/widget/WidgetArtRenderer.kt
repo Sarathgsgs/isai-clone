@@ -57,7 +57,7 @@ object WidgetArtRenderer {
             floatArrayOf(0.0f, 0.75f, 1.0f),
             Shader.TileMode.CLAMP
         )
-        canvas.drawCircle(discCenter, discRadius, paint)
+        canvas.drawCircle(discCenter, discCenter, discRadius, paint)
         paint.shader = null
 
         // 2. Vinyl Grooves (Subtle concentric rings)

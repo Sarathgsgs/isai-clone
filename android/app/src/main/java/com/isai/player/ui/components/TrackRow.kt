@@ -38,6 +38,26 @@ import com.isai.player.util.Formatters
 
 @Composable
 fun TrackRow(
+    track: com.isai.player.data.model.Track,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    onMoreOptions: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TrackRow(
+        title = track.title,
+        artist = track.artist,
+        durationMs = track.durationMs,
+        artUri = track.artPath ?: track.artUri,
+        isPlaying = isPlaying,
+        onClick = onClick,
+        onMoreClick = onMoreOptions,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun TrackRow(
     title: String,
     artist: String,
     durationMs: Long,
