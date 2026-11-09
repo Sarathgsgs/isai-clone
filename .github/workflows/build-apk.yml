@@ -1,8 +1,9 @@
-name: Build and Release APK
+name: Build and Release Android APK
 
 on:
   push:
     branches: [ master, main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
@@ -18,54 +19,83 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Ensure Gradlew Executable
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Locate Gradle Project and Assemble APK
         run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-          elif [ -f android/gradlew ]; then
-            cd android && chmod +x gradlew
+          echo "=== Locating Gradle Project ==="
+          if [ -f "./gradlew" ]; then
+            GRADLE_DIR="."
+          elif [ -f "./android/gradlew" ]; then
+            GRADLE_DIR="./android"
+          else
+            GRADLE_DIR=$(find . -maxdepth 3 -name "gradlew" -not -path "*/.*" | head -n 1 | xargs -r dirname)
           fi
 
-      - name: Assemble Debug APK
-        run: |
-          if [ -f gradlew ]; then
-            ./gradlew assembleDebug --no-daemon
-          elif [ -f android/gradlew ]; then
-            cd android && ./gradlew assembleDebug --no-daemon
+          if [ -z "$GRADLE_DIR" ] || [ ! -f "$GRADLE_DIR/gradlew" ]; then
+            echo "::error::Could not find 'gradlew' in repository! Checked root and subdirectories."
+            ls -la
+            exit 1
           fi
 
-      - name: Locate and Upload Debug APK Artifact
+          echo "Found Gradle project in: $GRADLE_DIR"
+          cd "$GRADLE_DIR"
+
+          echo "Granting executable permissions to gradlew..."
+          chmod +x gradlew
+
+          echo "Running assembleDebug..."
+          ./gradlew assembleDebug --stacktrace --no-daemon
+
+          echo "=== Locating Built APK ==="
+          APK_PATH=$(find . -type f -name "*debug*.apk" -o -name "app-debug.apk" | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::assembleDebug completed but no APK was found in build outputs."
+            exit 1
+          fi
+
+          echo "Found APK at: $GRADLE_DIR/$APK_PATH"
+          mkdir -p "$GITHUB_WORKSPACE/outputs"
+          cp "$APK_PATH" "$GITHUB_WORKSPACE/outputs/app-debug.apk"
+          echo "APK successfully staged at $GITHUB_WORKSPACE/outputs/app-debug.apk"
+
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Isai-v1.3.0-Debug-APK
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/debug/*.apk
+          path: outputs/app-debug.apk
           if-no-files-found: error
 
-      - name: Create GitHub Release with APK
+      - name: Create or Update GitHub Release with APK
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         with:
           tag_name: 'v1.3.0'
           name: 'Isai Music Player v1.3.0'
           body: |
-            ## 🎵 Isai Music Player v1.3.0
-            Download and install `app-debug.apk` directly on your Android phone!
+            ## 🎵 Isai Offline Music Player v1.3.0
             
-            ### ✨ Features:
-            - Full-disc rotating vinyl picture platter
-            - Custom Isai logo & adaptive app icons
-            - Tonearm touch to pause/resume
-            - Draggable vinyl scrubbing
-            - One UI compact ascending/descending sorting
-          files: |
-            app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/debug/*.apk
+            Download and install the APK directly on your Android phone!
+            
+            ### ✨ What's New in v1.3.0:
+            - **Picture Disc Vinyl Platter**: Full-bleed rotating album art across the disc with concentric groove overlay & specular lighting.
+            - **New App Logo**: Official high-contrast Isai note emblem with vinyl orange accent.
+            - **Tonearm Touch Controls**: Tap anywhere along the tonearm to effortlessly toggle between playing and paused.
+            - **Draggable Vinyl Scrubbing**: Drag across the spinning record to scrub audio smoothly.
+            - **One UI Compact Sorting**: Click the arrow to toggle Ascending/Descending; click the label to cycle Date Added -> Name -> Artist.
+            - **Top Bar Branding**: Polished header with orange highlighted final letter (`Isa` in white, `i` in orange).
+            
+            ### 📲 Installation Instructions:
+            1. Download `app-debug.apk` directly on your Android phone below.
+            2. Open the file and allow "Install from unknown sources" if prompted.
+            3. Enjoy high-fidelity offline vinyl listening!
+          files: outputs/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
