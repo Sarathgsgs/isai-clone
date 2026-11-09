@@ -6,10 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -49,15 +46,11 @@ fun CompactSortHeader(
                 .size(28.dp)
                 .clip(CircleShape)
         ) {
-            Icon(
-                imageVector = if (sortOrder == SortOrder.ASCENDING) {
-                    Icons.Default.ArrowUpward
-                } else {
-                    Icons.Default.ArrowDownward
-                },
-                contentDescription = if (sortOrder == SortOrder.ASCENDING) "Ascending" else "Descending",
-                tint = Color(0xFFFF8A3D),
-                modifier = Modifier.size(16.dp)
+            Text(
+                text = if (sortOrder == SortOrder.ASCENDING) "↑" else "↓",
+                color = Color(0xFFFF8A3D),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
             )
         }
 
