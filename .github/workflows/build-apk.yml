@@ -22,12 +22,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Build Web Application
         run: |
           echo "=== Building React/Vite Web App ==="
-          npm ci || npm install
+          npm install --legacy-peer-deps --no-audit
           npm run build
           echo "=== Staging Web Assets for Android APK ==="
           mkdir -p android/app/src/main/assets/dist
@@ -129,7 +128,7 @@ jobs:
 
       - name: Create or Update GitHub Release with APK
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         with:
           tag_name: 'v1.3.0'
           name: 'Isai Music Player v1.3.0'
