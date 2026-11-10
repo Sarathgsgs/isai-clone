@@ -93,4 +93,7 @@ export interface PlayerSettings {
   seekBarStyle: SeekBarStyle;
   lyricsTextSize: LyricsTextSize;
   rpm: number; // 33 or 45
+  excludePrefixesEnabled: boolean;
+  excludePrefixes: string[]; // e.g. ['Call', 'REC']
 }
+

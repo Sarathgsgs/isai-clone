@@ -18,6 +18,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Build Web Application
+        run: |
+          echo "=== Building React/Vite Web App ==="
+          npm ci || npm install
+          npm run build
+          echo "=== Staging Web Assets for Android APK ==="
+          mkdir -p android/app/src/main/assets/dist
+          cp -r dist/* android/app/src/main/assets/dist/
+          echo "Web application successfully bundled into android/app/src/main/assets/dist"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:

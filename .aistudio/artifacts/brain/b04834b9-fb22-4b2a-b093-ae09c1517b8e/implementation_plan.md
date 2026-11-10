@@ -170,3 +170,49 @@ This implementation delivers full support for selecting folders or individual tr
    - Verify playcursor follows finger/mouse smoothly without freezing, snapping back, or getting stuck.
 5. **Compilation & Linting**:
    - Execute `compile_applet` and `lint_applet` to confirm zero TypeScript or React compilation errors.
+
+---
+
+## 6. Unified Web-to-APK Production Packaging
+
+### Cause of UI Discrepancy in APK
+- AI Studio live preview runs the React + Tailwind + Vite application (`src/App.tsx`) with Samsung One UI tabs, sorting, Tamil demo tracks, realistic turntable plinth, tonearm physics, and lyrics.
+- In previous builds, the GitHub Actions workflow built a separate, unfinished native Kotlin Jetpack Compose UI (`HomeScreen.kt`) that had an empty Room database ("Your Library: 0 Songs") and bottom tabs ("Home | Library | Favorites | Search").
+
+### Implemented Fix
+1. **Full-Fidelity WebView Host (`MainActivity.kt`)**:
+   - `MainActivity.kt` now hosts the compiled React application directly in a hardware-accelerated, full-screen WebView with AMOLED `#121212` background.
+   - Built assets (`dist/`) are staged into `android/app/src/main/assets/dist/`.
+   - `WebViewClient.shouldInterceptRequest` handles `https://isai.local/` directly from APK assets, enabling 100% offline playback, standard ES Modules (`<script type="module">`), Web Audio API, and persistent local storage.
+   - Native file chooser (`onShowFileChooser`) connects to Android's system audio file picker for uploading personal tracks.
+   - Physical/gesture back button support via `window.__isaiGoBack` closes open sheets, modals, and the Now Playing view natively before exiting.
+2. **Automated GitHub Actions Pipeline (`.github/workflows/build-apk.yml`)**:
+   - Node.js 22 builds the exact web app bundle (`npm run build`).
+   - Copies bundle to `android/app/src/main/assets/dist/`.
+   - Gradle compiles and releases `app-debug.apk` directly matching the live preview.
+3. **Verification**:
+   - Web application builds cleanly (`compile_applet` & `lint_applet` passing with 0 errors).
+   - Project archive bundled at `/public/assets/aistudio/Isai-complete-app.zip`.
+
+---
+
+## 7. Call Recording & Custom Track Prefix Exclusion
+
+### Feature Overview
+When scanning local storage directories (e.g. phone storage or Downloads), call recordings and voice memos often clutter the music library (e.g., `Call@...`, `Call recording...`, `REC_...`). An interactive configuration now enables users to exclude any track whose title or filename begins with specified prefixes.
+
+### Implementation Details
+1. **Configurable Exclusion State**:
+   - Added `excludePrefixesEnabled: boolean` and `excludePrefixes: string[]` (pre-filled with `['Call']` as a default) to `PlayerSettings`.
+   - Persisted across launches via `localStorage`.
+2. **Settings Modal (`SettingsModal.tsx`)**:
+   - Dedicated **"Exclude Call Recordings & Prefixes"** section with an instant ON/OFF toggle switch.
+   - Text input allowing users to enter custom prefixes (`Call`, `REC_`, `Voice`, etc.) with an **Add** button and Enter key support.
+   - Active filter tag chips with 1-click removal (`×`).
+   - Quick preset buttons (`+ Call`, `+ REC`, `+ Recording`, `+ Voice`, `+ AUD-`).
+   - Live count of avoided tracks with an expandable "View excluded tracks" drawer displaying titles and source paths.
+3. **Library Integration**:
+   - `isTrackExcluded(track)` checks if `title` or `filename` starts with any configured prefix (case-insensitive).
+   - `filteredTracks`, `albums`, `artists`, `foldersWithCounts`, and auto-play queues dynamically avoid all excluded tracks.
+   - Samsung Music subheader displays a subtle indicator when tracks are excluded (e.g., `🛡️ X excluded`) with a link to manage them.
+   - **Folders Tab & Add Music Modal**: Include status banners and quick-access "Change" buttons.

@@ -40,6 +40,8 @@ import {
   Plus,
   Trash2,
   ChevronRight,
+  PhoneOff,
+  Shield,
 } from 'lucide-react';
 
 export default function App() {
@@ -124,22 +126,65 @@ export default function App() {
 
   // Player Settings
   const [settings, setSettings] = useState<PlayerSettings>(() => {
-    const saved = localStorage.getItem('isai_settings');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // Fall back
-      }
-    }
-    return {
+    const defaultSettings: PlayerSettings = {
       themeMode: 'dark',
       liftBehavior: 'pause',
       seekBarStyle: 'waveform_bars',
       lyricsTextSize: 'medium',
       rpm: 33,
+      excludePrefixesEnabled: true,
+      excludePrefixes: ['Call'],
     };
+    const saved = localStorage.getItem('isai_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          excludePrefixes: Array.isArray(parsed.excludePrefixes)
+            ? parsed.excludePrefixes
+            : defaultSettings.excludePrefixes,
+        };
+      } catch {
+        // Fall back
+      }
+    }
+    return defaultSettings;
   });
+
+  // Helper to determine if a track is excluded based on prefix configuration
+  const isTrackExcluded = useCallback(
+    (track: Track) => {
+      if (
+        !settings.excludePrefixesEnabled ||
+        !settings.excludePrefixes ||
+        settings.excludePrefixes.length === 0
+      ) {
+        return false;
+      }
+      const title = (track.title || '').trim().toLowerCase();
+      const folderPath = (track.folderPath || '').trim().toLowerCase();
+      const filename = folderPath.split('/').pop() || '';
+
+      return settings.excludePrefixes.some((rawPrefix) => {
+        const prefix = rawPrefix.trim().toLowerCase();
+        if (!prefix) return false;
+        return title.startsWith(prefix) || filename.startsWith(prefix);
+      });
+    },
+    [settings.excludePrefixesEnabled, settings.excludePrefixes]
+  );
+
+  // List of tracks excluded by the prefix filter
+  const excludedTracks = useMemo(() => {
+    return tracks.filter((t) => isTrackExcluded(t));
+  }, [tracks, isTrackExcluded]);
+
+  // Non-excluded active library tracks
+  const nonExcludedTracks = useMemo(() => {
+    return tracks.filter((t) => !isTrackExcluded(t));
+  }, [tracks, isTrackExcluded]);
 
   // Equalizer State
   const [equalizer, setEqualizer] = useState<EqualizerState>(() => {
@@ -209,6 +254,37 @@ export default function App() {
       // Safe fallback
     }
   }, [tracks]);
+
+  // Android Native Back Button / Gesture Navigation Support
+  useEffect(() => {
+    (window as any).__isaiGoBack = () => {
+      if (isTrackInfoOpen) { setIsTrackInfoOpen(false); return true; }
+      if (isEqualizerOpen) { setIsEqualizerOpen(false); return true; }
+      if (isSettingsOpen) { setIsSettingsOpen(false); return true; }
+      if (isSleepTimerOpen) { setIsSleepTimerOpen(false); return true; }
+      if (isQueueOpen) { setIsQueueOpen(false); return true; }
+      if (isAddFolderModalOpen) { setIsAddFolderModalOpen(false); return true; }
+      if (isNowPlayingOpen) { setIsNowPlayingOpen(false); return true; }
+      if (selectedAlbum) { setSelectedAlbum(null); return true; }
+      if (selectedFolderId) { setSelectedFolderId(null); return true; }
+      if (showSearchInput) { setShowSearchInput(false); setSearchQuery(''); return true; }
+      return false;
+    };
+    return () => {
+      delete (window as any).__isaiGoBack;
+    };
+  }, [
+    isTrackInfoOpen,
+    isEqualizerOpen,
+    isSettingsOpen,
+    isSleepTimerOpen,
+    isQueueOpen,
+    isAddFolderModalOpen,
+    isNowPlayingOpen,
+    selectedAlbum,
+    selectedFolderId,
+    showSearchInput,
+  ]);
 
   // Audio Engine Callbacks
   useEffect(() => {
@@ -561,7 +637,7 @@ export default function App() {
 
   const foldersWithCounts = useMemo(() => {
     return folders.map((f) => {
-      const count = tracks.filter((t) => {
+      const count = nonExcludedTracks.filter((t) => {
         if (!t.isCustomFile) return false;
         return (
           t.folderId === f.id ||
@@ -571,7 +647,7 @@ export default function App() {
       }).length;
       return { ...f, trackCount: count };
     });
-  }, [folders, tracks]);
+  }, [folders, nonExcludedTracks]);
 
   const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -584,6 +660,9 @@ export default function App() {
   // Filter & sort tracks
   const filteredTracks = useMemo(() => {
     let list = tracks.filter((t) => {
+      // Exclude call recordings and user-defined prefixes
+      if (isTrackExcluded(t)) return false;
+
       const matchSearch =
         !searchQuery ||
         t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -623,12 +702,22 @@ export default function App() {
     }
 
     return list;
-  }, [tracks, searchQuery, activeTab, selectedAlbum, selectedFolderId, folders, sortBy, sortOrder]);
+  }, [
+    tracks,
+    isTrackExcluded,
+    searchQuery,
+    activeTab,
+    selectedAlbum,
+    selectedFolderId,
+    folders,
+    sortBy,
+    sortOrder,
+  ]);
 
-  // Grouped albums
+  // Grouped albums (excluding call recordings/filtered prefixes)
   const albums = useMemo<Album[]>(() => {
     const map = new Map<string, Track[]>();
-    for (const t of tracks) {
+    for (const t of nonExcludedTracks) {
       const key = t.album || 'Unknown Album';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
@@ -642,27 +731,24 @@ export default function App() {
       year: trks[0]?.year,
       tracks: trks,
     }));
-  }, [tracks]);
+  }, [nonExcludedTracks]);
 
-  // Grouped artists
+  // Grouped artists (excluding call recordings/filtered prefixes)
   const artists = useMemo<Artist[]>(() => {
     const map = new Map<string, Track[]>();
-    for (const t of tracks) {
+    for (const t of nonExcludedTracks) {
       const key = t.artist || 'Unknown Artist';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
-    return Array.from(map.entries()).map(([name, trks]) => {
-      const albumsCount = new Set(trks.map((t) => t.album)).size;
-      return {
-        id: name,
-        name,
-        trackCount: trks.length,
-        albumCount: albumsCount,
-        artPath: trks[0]?.artPath,
-      };
-    });
-  }, [tracks]);
+    return Array.from(map.entries()).map(([name, trks]) => ({
+      id: name,
+      name,
+      trackCount: trks.length,
+      albumCount: new Set(trks.map((t) => t.album)).size,
+      artPath: trks[0]?.artPath,
+    }));
+  }, [nonExcludedTracks]);
 
   const progress = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
 
@@ -805,14 +891,14 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. Subheader Bar (Compact Sort on Left, Shuffle All + Play All on Right) */}
+      {/* 3. Subheader Bar (Compact Sort on Left, Call Recording Filter Badge, Shuffle All + Play All on Right) */}
       <div className="flex-shrink-0 bg-[#000000] px-5 py-2 z-10">
-        <div className="max-w-xl mx-auto flex items-center justify-between">
+        <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
           {/* Compact Sort: Click arrow to toggle asc/desc, click text to cycle criteria */}
-          <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-medium">
+          <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-medium min-w-0">
             <button
               onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-              className="p-1 -ml-1 rounded-full hover:bg-white/10 text-neutral-300 hover:text-white transition-colors cursor-pointer active:scale-90 flex items-center justify-center"
+              className="p-1 -ml-1 rounded-full hover:bg-white/10 text-neutral-300 hover:text-white transition-colors cursor-pointer active:scale-90 flex items-center justify-center flex-shrink-0"
               title={sortOrder === 'asc' ? 'Ascending (tap to switch to Descending)' : 'Descending (tap to switch to Ascending)'}
             >
               {sortOrder === 'asc' ? (
@@ -827,18 +913,40 @@ export default function App() {
                 else if (sortBy === 'title') setSortBy('artist');
                 else setSortBy('date');
               }}
-              className="hover:text-white transition-colors cursor-pointer"
+              className="hover:text-white transition-colors cursor-pointer whitespace-nowrap"
               title="Tap to change: Date added → Name → Artist"
             >
               {sortBy === 'date' ? 'Date added' : sortBy === 'title' ? 'Name' : 'Artist'}
             </button>
+
+            {/* Subtle Call Recording Filter Pill */}
+            {settings.excludePrefixesEnabled && excludedTracks.length > 0 && (
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="hidden sm:inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-mono border border-amber-500/20 transition-colors cursor-pointer truncate"
+                title={`Excluding ${excludedTracks.length} tracks starting with "${(settings.excludePrefixes || []).join(', ')}". Click to manage in Settings.`}
+              >
+                <PhoneOff className="w-2.5 h-2.5 flex-shrink-0" />
+                <span className="truncate">{excludedTracks.length} excluded</span>
+              </button>
+            )}
           </div>
 
           {/* Shuffle All & Play All Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {settings.excludePrefixesEnabled && excludedTracks.length > 0 && (
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="sm:hidden inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-mono border border-amber-500/20 transition-colors cursor-pointer"
+                title="Manage excluded prefixes"
+              >
+                <PhoneOff className="w-2.5 h-2.5" />
+                <span>{excludedTracks.length}</span>
+              </button>
+            )}
             <button
               onClick={handleShuffleAll}
-              className="w-9 h-9 rounded-full bg-neutral-900 border border-white/10 hover:bg-neutral-800 text-neutral-300 hover:text-white flex items-center justify-center transition-transform active:scale-90"
+              className="w-9 h-9 rounded-full bg-neutral-900 border border-white/10 hover:bg-neutral-800 text-neutral-300 hover:text-white flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
               title="Shuffle All"
             >
               <Shuffle className="w-4 h-4" />
@@ -846,7 +954,7 @@ export default function App() {
 
             <button
               onClick={handlePlayAll}
-              className="w-9 h-9 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white flex items-center justify-center transition-transform active:scale-90 shadow"
+              className="w-9 h-9 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white flex items-center justify-center transition-transform active:scale-90 shadow cursor-pointer"
               title="Play All"
             >
               <Play className="w-4 h-4 fill-white ml-0.5" />
@@ -900,6 +1008,30 @@ export default function App() {
         {/* Folders Tab: Directory Overview Grid / List (When no folder is selected) */}
         {activeTab === 'folders' && !selectedFolderId && (
           <div className="flex flex-col gap-3 pt-1">
+            {/* Call Recording & Excluded Prefixes Status Banner */}
+            {settings.excludePrefixesEnabled && (settings.excludePrefixes || []).length > 0 && (
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900/60 border border-white/5 text-xs text-neutral-400">
+                <div className="flex items-center gap-2 min-w-0">
+                  <PhoneOff className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                  <span className="truncate">
+                    Call recording filter: avoiding songs starting with{' '}
+                    <strong className="text-amber-300 font-medium">
+                      "{(settings.excludePrefixes || []).join('", "')}"
+                    </strong>
+                    {excludedTracks.length > 0 && (
+                      <span className="text-neutral-500 ml-1">({excludedTracks.length} excluded)</span>
+                    )}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="text-amber-400 hover:text-amber-300 hover:underline font-semibold text-[11px] ml-2 flex-shrink-0 cursor-pointer"
+                >
+                  Configure
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center justify-between pb-1">
               <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
                 {foldersWithCounts.length} {foldersWithCounts.length === 1 ? 'Directory' : 'Directories'} Configured
@@ -907,7 +1039,7 @@ export default function App() {
 
               <button
                 onClick={() => setIsAddFolderModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Folder</span>
@@ -1223,6 +1355,8 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onUpdateSettings={(newSettings) => setSettings((prev) => ({ ...prev, ...newSettings }))}
+        excludedTracksCount={excludedTracks.length}
+        excludedTracks={excludedTracks}
       />
 
       {/* Sleep Timer Modal */}
@@ -1269,7 +1403,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => setIsAddFolderModalOpen(false)}
-                className="p-1 rounded-full hover:bg-white/10 text-neutral-400 hover:text-white"
+                className="p-1 rounded-full hover:bg-white/10 text-neutral-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1317,6 +1451,35 @@ export default function App() {
                     Choose one or multiple individual audio tracks (MP3, WAV, FLAC, M4A, OGG) from anywhere on your device.
                   </p>
                 </div>
+              </button>
+            </div>
+
+            {/* Call Recording & Excluded Prefixes Status */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs">
+              <div className="flex items-center gap-2 text-amber-300 min-w-0">
+                <PhoneOff className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate">
+                  {settings.excludePrefixesEnabled && (settings.excludePrefixes || []).length > 0 ? (
+                    <>
+                      Excluding files starting with:{' '}
+                      <strong className="text-white">
+                        {(settings.excludePrefixes || []).join(', ')}
+                      </strong>
+                    </>
+                  ) : (
+                    <span className="text-neutral-400">Prefix filter is disabled</span>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddFolderModalOpen(false);
+                  setIsSettingsOpen(true);
+                }}
+                className="text-amber-400 hover:text-amber-300 font-semibold hover:underline ml-2 flex-shrink-0 cursor-pointer text-[11px]"
+              >
+                Change
               </button>
             </div>
           </div>
