@@ -122,7 +122,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Isai-v1.3.1-Debug-APK
+          name: Isai-v1.4.0-Debug-APK
           path: outputs/app-debug.apk
           if-no-files-found: error
 
@@ -130,26 +130,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: 'v1.3.1'
-          name: 'Isai Music Player v1.3.1'
+          tag_name: 'v1.4.0'
+          name: 'Isai Music Player v1.4.0'
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🎵 Isai Music Player v1.3.1
-            
-            Install the updated APK on your Android phone!
-            
-            ### ✨ What's New in v1.3.1:
-            - **Android SAF Folder Picker**: Full folder tree selection with the native **"USE THIS FOLDER"** confirmation button. Imports all audio tracks across the chosen directory.
-            - **Status Bar & Camera Cutout Spacing**: Dynamically lowered top bar with `WindowInsetsCompat` status bar insets. No more overlapping with phone clock, SIM strength, or battery icons.
-            - **Call Recording & Voice Memo Filter**: Configure track prefixes (such as `Call`, `REC`, `Voice`) to automatically exclude call recordings from your library.
-            - **Direct Web-to-APK Parity**: Exact Samsung One UI categories (`Favourites`, `Playlists`, `Tracks`, `Albums`, `Artists`, `Folders`) and turntable stage matching the preview.
-            
-            ### 📲 How to Install on Android:
-            1. Download `app-debug.apk` directly on your Android phone below.
-            2. Tap the downloaded file to install. Allow "Install from unknown sources" if prompted.
-            3. Open **Isai** and enjoy!
+            ## 🎵 Isai Music Player v1.4.0 Release
+
+            ### ✨ What's New in v1.4.0:
+            1. **Crystal-Clear Hardware Audio Playback**: Direct Media3 ExoPlayer integration ensures 100% audible playback without WebView audio pipeline silences.
+            2. **Real ID3 Metadata & Embedded Album Artwork**: Full tag extraction for Track Title, Artist, Album, and embedded cover art displayed directly on the spinning vinyl platter.
+            3. **Clean Installation & First-Time Onboarding**: Mock demo tracks removed. Starts clean with an automated prompt to select your local music directory.
+            4. **Official Isai Splash Screen**: Updated dark splash screen featuring the official high-resolution Isai logo emblem.
+            5. **360° Circular Turntable Scratching**: True vinyl disc scratching—spin clockwise to seek forward and counter-clockwise to rewind.
+            6. **Samsung Music Style Media Notification**: Rich system notification with playback controls (Play/Pause/Next/Prev), track artwork, and lock screen seekbar.
+            7. **Comfortable Top Bar Spacing**: Lowered top action headers in library and NowPlaying views with generous clearance from phone notch, camera cutout, clock, and status bar icons.
+
+            ### 📲 How to Install:
+            1. Download `app-debug.apk` directly on your Android device below.
+            2. Tap the file to install (allow "Install unknown apps" if prompted).
+            3. Tap **Select Music Folder** on first launch and enjoy your offline music!
           files: outputs/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -57,6 +57,26 @@ export class AudioEngine {
         this.stateChangeCallback(false);
       }
     });
+
+    if (typeof window !== 'undefined') {
+      (window as any).__isaiOnTimeUpdate = (currentMs: number, durMs: number) => {
+        if (this.progressCallback && durMs > 0) {
+          this.progressCallback(currentMs / 1000, durMs / 1000);
+        }
+      };
+
+      (window as any).__isaiOnStateChange = (playing: boolean) => {
+        if (this.stateChangeCallback) {
+          this.stateChangeCallback(playing);
+        }
+      };
+
+      (window as any).__isaiOnEnded = () => {
+        if (this.endedCallback) {
+          this.endedCallback();
+        }
+      };
+    }
   }
 
   private initAudioNodes() {
@@ -121,6 +141,24 @@ export class AudioEngine {
     this.currentTrack = track;
     this.stopSynth();
 
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.playTrack) {
+      isaiAndroid.playTrack(
+        track.id,
+        track.uri,
+        track.title || 'Unknown Title',
+        track.artist || 'Unknown Artist',
+        track.album || 'Unknown Album',
+        track.artPath || '',
+        track.durationMs || 180000,
+        0
+      );
+      if (!autoplay) {
+        isaiAndroid.pauseTrack();
+      }
+      return;
+    }
+
     // Check if track has an actual playable audio URI or file
     if (track.uri && !track.uri.startsWith('synth:')) {
       this.audioElement.src = track.uri;
@@ -143,6 +181,12 @@ export class AudioEngine {
   }
 
   async play() {
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.resumeTrack) {
+      isaiAndroid.resumeTrack();
+      return;
+    }
+
     this.initAudioNodes();
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
       await this.audioCtx.resume();
@@ -162,6 +206,12 @@ export class AudioEngine {
   }
 
   pause() {
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.pauseTrack) {
+      isaiAndroid.pauseTrack();
+      return;
+    }
+
     if (this.isSynthPlaying) {
       this.pauseSynth();
     } else {
@@ -170,6 +220,12 @@ export class AudioEngine {
   }
 
   seek(seconds: number) {
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.seekTo) {
+      isaiAndroid.seekTo(Math.round(seconds * 1000));
+      return;
+    }
+
     if (this.currentTrack?.uri.startsWith('synth:') || this.isSynthPlaying) {
       this.synthTime = Math.max(0, Math.min(this.synthDuration, seconds));
       if (this.progressCallback) {
@@ -193,6 +249,11 @@ export class AudioEngine {
 
   setVolume(vol: number) {
     const v = Math.max(0, Math.min(1, vol));
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.setVolume) {
+      isaiAndroid.setVolume(v);
+    }
+
     this.audioElement.volume = v;
     if (this.masterGain && this.audioCtx) {
       this.masterGain.gain.setValueAtTime(v, this.audioCtx.currentTime);

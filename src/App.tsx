@@ -902,7 +902,7 @@ export default function App() {
       )}
 
       {/* 1. Samsung Music One UI Top Header (Title on left, Search & Menu on right) */}
-      <header className="flex-shrink-0 bg-[#000000] px-5 pt-6 pb-2 z-30">
+      <header className="flex-shrink-0 bg-[#000000] px-5 pt-10 sm:pt-12 pb-2 z-30">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
           {showSearchInput ? (
             <div className="flex-1 flex items-center gap-2 bg-neutral-900 border border-white/10 rounded-full px-3 py-1.5 animate-fadeIn">
@@ -1213,16 +1213,66 @@ export default function App() {
         {(activeTab === 'tracks' || activeTab === 'favourites' || (activeTab === 'folders' && selectedFolderId) || activeTab === 'playlists' || selectedAlbum) && (
           <>
             {filteredTracks.length === 0 ? (
-              <div className="py-20 text-center text-neutral-500 text-sm flex flex-col items-center gap-3">
-                <Music className="w-12 h-12 text-neutral-700" />
-                <p>No tracks found</p>
-                <button
-                  onClick={() => setIsAddFolderModalOpen(true)}
-                  className="px-4 py-2 rounded-full bg-neutral-900 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white"
-                >
-                  Add Music Directory / Downloads
-                </button>
-              </div>
+              tracks.length === 0 ? (
+                <div className="py-12 px-4 text-center flex flex-col items-center justify-center gap-4 animate-fadeIn">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-orange-500/20 to-amber-500/10 border border-orange-500/30 flex items-center justify-center shadow-xl">
+                    <Disc className="w-10 h-10 text-orange-400 animate-spin" style={{ animationDuration: '8s' }} />
+                  </div>
+                  <div className="max-w-xs">
+                    <h3 className="text-xl font-bold text-white tracking-tight">Welcome to Isai</h3>
+                    <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                      Access your local music collection directly. Choose your device's Music folder to load your songs, album art, and audio files.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2.5 w-full max-w-xs mt-2">
+                    <button
+                      onClick={() => {
+                        if ((window as any).IsaiAndroid?.openFolderPicker) {
+                          (window as any).IsaiAndroid.openFolderPicker();
+                        } else {
+                          folderInputRef.current?.click();
+                        }
+                      }}
+                      className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-black text-sm font-bold shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      <span>Select Music Folder</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if ((window as any).IsaiAndroid?.openFilePicker) {
+                          (window as any).IsaiAndroid.openFilePicker();
+                        } else {
+                          fileInputRef.current?.click();
+                        }
+                      }}
+                      className="w-full py-3 px-5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4 text-neutral-400" />
+                      <span>Pick Audio Files</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-20 text-center text-neutral-500 text-sm flex flex-col items-center gap-3">
+                  <Music className="w-12 h-12 text-neutral-700" />
+                  <p>No tracks found matching your filter</p>
+                  <button
+                    onClick={() => {
+                      if ((window as any).IsaiAndroid?.openFolderPicker) {
+                        (window as any).IsaiAndroid.openFolderPicker();
+                      } else {
+                        setIsAddFolderModalOpen(true);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-full bg-neutral-900 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white"
+                  >
+                    Add Music Directory / Downloads
+                  </button>
+                </div>
+              )
             ) : (
               filteredTracks.map((track, idx) => {
                 const isCurrent = currentTrack?.id === track.id;

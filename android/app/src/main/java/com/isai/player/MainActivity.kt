@@ -26,16 +26,30 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.isai.player.data.model.Track
+import com.isai.player.data.scanner.DiscoveredFile
+import com.isai.player.data.scanner.MetadataExtractor
+import com.isai.player.playback.PlayerController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
 import java.net.URLDecoder
 import java.net.URLEncoder
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var playerController: PlayerController
+
+    @Inject
+    lateinit var metadataExtractor: MetadataExtractor
 
     private var webView: WebView? = null
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
@@ -125,9 +139,25 @@ class MainActivity : ComponentActivity() {
 
         setupWebView(isaiWebView)
         setupBackNavigation(isaiWebView)
+        observePlayerState(isaiWebView)
 
         setContentView(isaiWebView)
         isaiWebView.loadUrl("https://isai.local/index.html")
+    }
+
+    private fun observePlayerState(wv: WebView) {
+        lifecycleScope.launch {
+            playerController.playerState.collectLatest { state ->
+                val isPlaying = state.isPlaying
+                val currentPos = state.currentPositionMs
+                val dur = state.durationMs
+                wv.evaluateJavascript(
+                    "window.__isaiOnTimeUpdate && window.__isaiOnTimeUpdate($currentPos, $dur); " +
+                    "window.__isaiOnStateChange && window.__isaiOnStateChange($isPlaying);",
+                    null
+                )
+            }
+        }
     }
 
     private fun setupWebView(wv: WebView) {
@@ -147,7 +177,7 @@ class MainActivity : ComponentActivity() {
             displayZoomControls = false
         }
 
-        // Bridge for Native SAF Folder Picking and Audio Scanning
+        // Bridge for Native SAF Folder Picking, Audio Scanning & Native Media Playback
         wv.addJavascriptInterface(IsaiAndroidBridge(), "IsaiAndroid")
 
         wv.webChromeClient = object : WebChromeClient() {
@@ -185,28 +215,71 @@ class MainActivity : ComponentActivity() {
                 val url = request?.url ?: return null
                 val host = url.host
 
-                // Handle Audio Streaming for Native Content URIs
+                // 1. Handle Cached Artwork Serving: https://isai.local/artwork?id=...
+                if ((host == "isai.local" || host == "localhost") && url.path == "/artwork") {
+                    val id = url.getQueryParameter("id")
+                    if (!id.isNullOrBlank()) {
+                        val artFile = File(cacheDir, "art/$id.jpg")
+                        if (artFile.exists() && artFile.length() > 0) {
+                            try {
+                                val headers = mapOf(
+                                    "Access-Control-Allow-Origin" to "*",
+                                    "Cache-Control" to "public, max-age=86400"
+                                )
+                                return WebResourceResponse("image/jpeg", null, 200, "OK", headers, FileInputStream(artFile))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+
+                // 2. Handle Audio Streaming with HTTP 206 Partial Content Range Requests
                 if ((host == "isai.local" || host == "localhost") && url.path == "/content_stream") {
                     val encodedUri = url.getQueryParameter("uri")
                     if (!encodedUri.isNullOrBlank()) {
                         try {
                             val decodedUri = Uri.parse(URLDecoder.decode(encodedUri, "UTF-8"))
-                            val inputStream = contentResolver.openInputStream(decodedUri)
                             val mimeType = contentResolver.getType(decodedUri) ?: "audio/mpeg"
-                            val headers = mapOf(
-                                "Access-Control-Allow-Origin" to "*",
-                                "Access-Control-Allow-Methods" to "GET, OPTIONS",
-                                "Access-Control-Allow-Headers" to "*",
-                                "Accept-Ranges" to "bytes"
-                            )
-                            return WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, inputStream)
+                            val afd = contentResolver.openAssetFileDescriptor(decodedUri, "r")
+                            if (afd != null) {
+                                val totalLength = afd.length
+                                val rangeHeader = request.requestHeaders?.get("Range")
+
+                                if (rangeHeader != null && rangeHeader.startsWith("bytes=") && totalLength > 0) {
+                                    val rangeValues = rangeHeader.substring(6).split("-")
+                                    val start = rangeValues[0].toLongOrNull() ?: 0L
+                                    val end = if (rangeValues.size > 1 && rangeValues[1].isNotBlank()) {
+                                        rangeValues[1].toLongOrNull() ?: (totalLength - 1)
+                                    } else {
+                                        totalLength - 1
+                                    }
+                                    val contentLength = (end - start + 1).coerceAtLeast(0L)
+                                    val inputStream = afd.createInputStream()
+                                    inputStream.skip(start)
+
+                                    val headers = mapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Accept-Ranges" to "bytes",
+                                        "Content-Range" to "bytes $start-$end/$totalLength",
+                                        "Content-Length" to contentLength.toString(),
+                                        "Access-Control-Expose-Headers" to "Content-Range, Content-Length, Accept-Ranges"
+                                    )
+                                    return WebResourceResponse(mimeType, "UTF-8", 206, "Partial Content", headers, inputStream)
+                                } else {
+                                    val headers = mutableMapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Accept-Ranges" to "bytes"
+                                    )
+                                    if (totalLength > 0) headers["Content-Length"] = totalLength.toString()
+                                    return WebResourceResponse(mimeType, "UTF-8", 200, "OK", headers, afd.createInputStream())
+                                }
+                            }
                         } catch (e: Exception) {
                             android.util.Log.e("IsaiWeb", "Error streaming content URI: $encodedUri", e)
                         }
                     }
                 }
 
-                // Handle Bundled App Assets
+                // 3. Handle Bundled App Assets
                 if (host == "isai.local" || host == "localhost" || host == "appassets.androidplatform.net") {
                     var path = url.path?.removePrefix("/") ?: "index.html"
                     if (path.isEmpty() || path == "/") path = "index.html"
@@ -292,10 +365,93 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        @JavascriptInterface
+        fun playTrack(
+            id: String,
+            uri: String,
+            title: String,
+            artist: String,
+            album: String,
+            artPath: String,
+            durationMs: Long,
+            positionMs: Long
+        ) {
+            val track = Track(
+                id = id.hashCode().toLong(),
+                uri = uri,
+                title = title,
+                titleSort = title,
+                artist = artist,
+                albumArtist = artist,
+                album = album,
+                year = 2024,
+                trackNo = 1,
+                discNo = 1,
+                durationMs = durationMs,
+                mimeType = "audio/mpeg",
+                sizeBytes = 0L,
+                lastModified = 0L,
+                artPath = if (artPath.isNotBlank()) artPath else null,
+                folderPath = album,
+                dateAdded = System.currentTimeMillis(),
+                isFavorite = false,
+                lyricsUri = null,
+                hasLyrics = false
+            )
+            runOnUiThread {
+                playerController.playTrack(track, listOf(track))
+                if (positionMs > 0) {
+                    playerController.seekTo(positionMs)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun pauseTrack() {
+            runOnUiThread {
+                playerController.pause()
+            }
+        }
+
+        @JavascriptInterface
+        fun resumeTrack() {
+            runOnUiThread {
+                playerController.play()
+            }
+        }
+
+        @JavascriptInterface
+        fun seekTo(positionMs: Long) {
+            runOnUiThread {
+                playerController.seekTo(positionMs)
+            }
+        }
+
+        @JavascriptInterface
+        fun setVolume(vol: Float) {
+            runOnUiThread {
+                playerController.setVolume(vol)
+            }
+        }
+
+        @JavascriptInterface
+        fun skipNext() {
+            runOnUiThread {
+                playerController.skipToNext()
+            }
+        }
+
+        @JavascriptInterface
+        fun skipPrevious() {
+            runOnUiThread {
+                playerController.skipToPrevious()
+            }
+        }
     }
 
     // Scan SAF Document Tree after user taps "USE THIS FOLDER"
-    private fun scanAndImportFolder(treeUri: Uri) {
+    private suspend fun scanAndImportFolder(treeUri: Uri) {
         val tracks = JSONArray()
         var folderName = "Music Folder"
 
@@ -337,7 +493,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun scanDirectoryDocuments(
+    private suspend fun scanDirectoryDocuments(
         treeUri: Uri,
         parentDocId: String,
         folderName: String,
@@ -376,19 +532,49 @@ class MainActivity : ComponentActivity() {
                 } else if (isAudioFile(displayName, mimeType)) {
                     val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                     val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(docUri.toString(), "UTF-8")
-                    val cleanTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
+
+                    // Extract actual ID3 tags: Title, Artist, Album, Duration & Embedded Artwork
+                    val discoveredFile = DiscoveredFile(
+                        uriString = docUri.toString(),
+                        documentId = docId,
+                        displayName = displayName,
+                        mimeType = mimeType,
+                        sizeBytes = size,
+                        lastModified = System.currentTimeMillis(),
+                        folderPath = folderName
+                    )
+
+                    var extractedTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
+                    var extractedArtist = "Unknown Artist"
+                    var extractedAlbum = folderName
+                    var durationMs = 180000L
+                    var artUrl: String? = null
+
+                    try {
+                        val trackEntity = metadataExtractor.extractTrack(discoveredFile)
+                        if (trackEntity.title.isNotBlank()) extractedTitle = trackEntity.title
+                        if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
+                        if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
+                        if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
+                        if (!trackEntity.artPath.isNullOrBlank()) {
+                            artUrl = "https://isai.local/artwork?id=" + trackEntity.id
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("IsaiMetadata", "Error reading metadata: ${e.message}")
+                    }
 
                     val trk = JSONObject().apply {
                         put("id", "tree-" + docId.hashCode().toString())
                         put("uri", docUri.toString())
                         put("streamUrl", streamUrl)
-                        put("title", if (cleanTitle.isNotBlank()) cleanTitle else displayName)
-                        put("artist", "Local Artist")
-                        put("album", folderName)
+                        put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
+                        put("artist", extractedArtist)
+                        put("album", extractedAlbum)
+                        if (artUrl != null) put("artPath", artUrl)
                         put("folderPath", "$folderName/$displayName")
                         put("mimeType", if (mimeType.isNotBlank()) mimeType else "audio/mpeg")
                         put("sizeBytes", size)
-                        put("durationMs", 180000L)
+                        put("durationMs", durationMs)
                     }
                     results.put(trk)
                 }
@@ -396,7 +582,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun processSelectedUris(uris: List<Uri>) {
+    private suspend fun processSelectedUris(uris: List<Uri>) {
         val results = JSONArray()
         for (uri in uris) {
             try {
@@ -414,19 +600,45 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(uri.toString(), "UTF-8")
-                val cleanTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
+                val discoveredFile = DiscoveredFile(
+                    uriString = uri.toString(),
+                    documentId = uri.toString().hashCode().toString(),
+                    displayName = displayName,
+                    mimeType = mimeType,
+                    sizeBytes = size,
+                    lastModified = System.currentTimeMillis(),
+                    folderPath = "Imported Tracks"
+                )
+
+                var extractedTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
+                var extractedArtist = "Unknown Artist"
+                var extractedAlbum = "Imported Tracks"
+                var durationMs = 180000L
+                var artUrl: String? = null
+
+                try {
+                    val trackEntity = metadataExtractor.extractTrack(discoveredFile)
+                    if (trackEntity.title.isNotBlank()) extractedTitle = trackEntity.title
+                    if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
+                    if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
+                    if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
+                    if (!trackEntity.artPath.isNullOrBlank()) {
+                        artUrl = "https://isai.local/artwork?id=" + trackEntity.id
+                    }
+                } catch (_: Exception) {}
 
                 val trk = JSONObject().apply {
                     put("id", "file-" + uri.toString().hashCode().toString())
                     put("uri", uri.toString())
                     put("streamUrl", streamUrl)
-                    put("title", if (cleanTitle.isNotBlank()) cleanTitle else displayName)
-                    put("artist", "Local Artist")
-                    put("album", "Imported Tracks")
+                    put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
+                    put("artist", extractedArtist)
+                    put("album", extractedAlbum)
+                    if (artUrl != null) put("artPath", artUrl)
                     put("folderPath", "Imported Tracks/$displayName")
                     put("mimeType", mimeType)
                     put("sizeBytes", size)
-                    put("durationMs", 180000L)
+                    put("durationMs", durationMs)
                 }
                 results.put(trk)
             } catch (e: Exception) {

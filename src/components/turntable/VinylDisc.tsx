@@ -29,10 +29,11 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
   const discRef = useRef<HTMLDivElement>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const isScratchingRef = useRef<boolean>(false);
   const [isScratchingUI, setIsScratchingUI] = useState<boolean>(false);
-  const lastXRef = useRef<number>(0);
-  const totalMovedDistRef = useRef<number>(0);
+  const lastAngleRef = useRef<number>(0);
+  const totalScratchedAngleRef = useRef<number>(0);
 
   useEffect(() => {
     let lastTimestamp = performance.now();
@@ -60,14 +61,22 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
     };
   }, [isPlaying, rpm]);
 
+  const getPointerAngle = (clientX: number, clientY: number): number => {
+    if (!containerRef.current) return 0;
+    const rect = containerRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return Math.atan2(clientY - centerY, clientX - centerX); // radians (-PI to +PI)
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Only primary button for mouse, or any touch point
     if (e.button !== 0 && e.pointerType === 'mouse') return;
 
     isScratchingRef.current = true;
     setIsScratchingUI(true);
-    lastXRef.current = e.clientX;
-    totalMovedDistRef.current = 0;
+    lastAngleRef.current = getPointerAngle(e.clientX, e.clientY);
+    totalScratchedAngleRef.current = 0;
 
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -81,25 +90,30 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isScratchingRef.current) return;
 
-    const deltaX = e.clientX - lastXRef.current;
-    lastXRef.current = e.clientX;
-    totalMovedDistRef.current += Math.abs(deltaX);
+    const currentAngle = getPointerAngle(e.clientX, e.clientY);
+    let deltaAngle = currentAngle - lastAngleRef.current;
 
-    if (Math.abs(deltaX) > 0.2) {
-      // 1. Physically rotate vinyl disc following user's drag gesture
-      // 1 pixel of drag = ~0.85 degrees of rotation
-      const degDelta = deltaX * 0.85;
-      rotationRef.current = (rotationRef.current + degDelta) % 360;
+    // Normalize wrap-around across -PI / +PI boundary
+    if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+    if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
+    lastAngleRef.current = currentAngle;
+    totalScratchedAngleRef.current += Math.abs(deltaAngle);
+
+    if (Math.abs(deltaAngle) > 0.005) {
+      // 1. Physically rotate vinyl disc following user's circular finger rotation
+      const deltaDeg = (deltaAngle * 180) / Math.PI;
+      rotationRef.current = (rotationRef.current + deltaDeg) % 360;
       if (discRef.current) {
         discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
       }
 
-      // 2. Play realistic physical DJ vinyl scratch audio modulated by velocity
-      audioEngine.playScratchSound(deltaX);
+      // 2. Play realistic physical DJ vinyl scratch audio modulated by angular velocity
+      audioEngine.playScratchSound(deltaDeg * 2.5);
 
-      // 3. Scrub audio playback position: Drag right scrubs forward, drag left scrubs backward
-      // 100px drag = 5.0 seconds
-      const deltaSeconds = deltaX * 0.05;
+      // 3. Circular scrub: Clockwise rotation seeks forward, counter-clockwise seeks backward
+      // One full 360 rotation (2*PI radians) scrubs ~12 seconds of playback
+      const deltaSeconds = (deltaAngle / (2 * Math.PI)) * 12;
       onScratch?.(deltaSeconds);
     }
   };
@@ -117,8 +131,8 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
       // Safe fallback
     }
 
-    // Quick tap toggles play/pause; horizontal drag completes scratch
-    if (totalMovedDistRef.current < 6) {
+    // Quick tap without circular spin toggles play/pause; otherwise complete scratch
+    if (totalScratchedAngleRef.current < 0.1) {
       onClick?.();
     } else {
       onScratchEnd?.();
@@ -137,6 +151,7 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
 
   return (
     <div
+      ref={containerRef}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

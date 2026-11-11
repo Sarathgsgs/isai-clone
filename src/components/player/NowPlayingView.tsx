@@ -125,7 +125,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
       }}
     >
       {/* 1. Top Action Bar (Matching Samsung Music One UI: Collapse on left; Volume, EQ, Menu on right) */}
-      <div className="w-full max-w-lg mx-auto px-5 pt-5 sm:pt-6 pb-2 flex items-center justify-between flex-shrink-0 z-20">
+      <div className="w-full max-w-lg mx-auto px-5 pt-11 sm:pt-14 pb-2 flex items-center justify-between flex-shrink-0 z-20">
         <button
           onClick={onCollapse}
           className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white transition-colors"
