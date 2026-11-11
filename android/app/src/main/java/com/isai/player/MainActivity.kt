@@ -395,7 +395,8 @@ class MainActivity : ComponentActivity() {
                 artPath = if (artPath.isNotBlank()) artPath else null,
                 folderPath = album,
                 dateAdded = System.currentTimeMillis(),
-                isFavorite = false,
+                isMissing = false,
+                relativePath = null,
                 lyricsUri = null,
                 hasLyrics = false
             )
