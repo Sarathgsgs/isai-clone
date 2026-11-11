@@ -286,6 +286,109 @@ export default function App() {
     showSearchInput,
   ]);
 
+  // Android Native Folder (SAF Document Tree) and Multi-File Listeners
+  useEffect(() => {
+    (window as any).__isaiOnFolderImported = (folderName: string, rawTracks: any[]) => {
+      if (!rawTracks || rawTracks.length === 0) return;
+      const folderId = `folder-${folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+      const newTracks: Track[] = rawTracks.map((raw) => {
+        const waveform = Array.from({ length: 60 }, () =>
+          Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
+        );
+        return {
+          id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          uri: raw.streamUrl || raw.uri,
+          title: raw.title || 'Audio Track',
+          artist: raw.artist || 'Local Artist',
+          album: raw.album || folderName,
+          durationMs: raw.durationMs || 180000,
+          mimeType: raw.mimeType || 'audio/mpeg',
+          sizeBytes: raw.sizeBytes,
+          dateAdded: Date.now(),
+          isFavorite: false,
+          hasLyrics: false,
+          waveform,
+          isCustomFile: true,
+          folderPath: raw.folderPath || `${folderName}/${raw.title}`,
+          folderId,
+        };
+      });
+
+      setTracks((prev) => [...newTracks, ...prev]);
+      const playable = newTracks.filter((t) => !isTrackExcluded(t));
+      if (playable.length > 0) {
+        setQueue((prev) => [...playable, ...prev]);
+        handlePlayTrack(playable[0], playable);
+      }
+
+      setFolders((prevFolders) => {
+        const existing = prevFolders.find(
+          (f) => f.id === folderId || f.name.toLowerCase() === folderName.toLowerCase()
+        );
+        if (existing) {
+          return prevFolders.map((f) =>
+            f.id === existing.id
+              ? { ...f, trackCount: f.trackCount + newTracks.length }
+              : f
+          );
+        }
+        return [
+          {
+            id: folderId,
+            name: folderName,
+            path: folderName,
+            trackCount: newTracks.length,
+            addedAt: Date.now(),
+          },
+          ...prevFolders,
+        ];
+      });
+
+      setSelectedFolderId(folderId);
+      setActiveTab('folders');
+    };
+
+    (window as any).__isaiOnTracksImported = (rawTracks: any[]) => {
+      if (!rawTracks || rawTracks.length === 0) return;
+      const folderName = 'Imported Tracks';
+      const folderId = 'folder-imported-tracks';
+      const newTracks: Track[] = rawTracks.map((raw) => {
+        const waveform = Array.from({ length: 60 }, () =>
+          Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
+        );
+        return {
+          id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          uri: raw.streamUrl || raw.uri,
+          title: raw.title || 'Audio Track',
+          artist: raw.artist || 'Local Artist',
+          album: raw.album || folderName,
+          durationMs: raw.durationMs || 180000,
+          mimeType: raw.mimeType || 'audio/mpeg',
+          sizeBytes: raw.sizeBytes,
+          dateAdded: Date.now(),
+          isFavorite: false,
+          hasLyrics: false,
+          waveform,
+          isCustomFile: true,
+          folderPath: raw.folderPath || `${folderName}/${raw.title}`,
+          folderId,
+        };
+      });
+
+      setTracks((prev) => [...newTracks, ...prev]);
+      const playable = newTracks.filter((t) => !isTrackExcluded(t));
+      if (playable.length > 0) {
+        setQueue((prev) => [...playable, ...prev]);
+        handlePlayTrack(playable[0], playable);
+      }
+    };
+
+    return () => {
+      delete (window as any).__isaiOnFolderImported;
+      delete (window as any).__isaiOnTracksImported;
+    };
+  }, [isTrackExcluded]);
+
   // Audio Engine Callbacks
   useEffect(() => {
     audioEngine.onProgress((cur, dur) => {
@@ -799,7 +902,7 @@ export default function App() {
       )}
 
       {/* 1. Samsung Music One UI Top Header (Title on left, Search & Menu on right) */}
-      <header className="flex-shrink-0 bg-[#000000] px-5 pt-4 pb-2 z-30">
+      <header className="flex-shrink-0 bg-[#000000] px-5 pt-6 pb-2 z-30">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
           {showSearchInput ? (
             <div className="flex-1 flex items-center gap-2 bg-neutral-900 border border-white/10 rounded-full px-3 py-1.5 animate-fadeIn">
@@ -1415,7 +1518,11 @@ export default function App() {
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
-                  folderInputRef.current?.click();
+                  if ((window as any).IsaiAndroid?.openFolderPicker) {
+                    (window as any).IsaiAndroid.openFolderPicker();
+                  } else {
+                    folderInputRef.current?.click();
+                  }
                 }}
                 className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-amber-500/30 hover:border-amber-500/60 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
               >
@@ -1436,7 +1543,11 @@ export default function App() {
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
-                  fileInputRef.current?.click();
+                  if ((window as any).IsaiAndroid?.openFilePicker) {
+                    (window as any).IsaiAndroid.openFilePicker();
+                  } else {
+                    fileInputRef.current?.click();
+                  }
                 }}
                 className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 hover:border-white/20 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
               >

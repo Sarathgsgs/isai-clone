@@ -122,7 +122,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Isai-v1.3.0-Debug-APK
+          name: Isai-v1.3.1-Debug-APK
           path: outputs/app-debug.apk
           if-no-files-found: error
 
@@ -130,25 +130,26 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: 'v1.3.0'
-          name: 'Isai Music Player v1.3.0'
+          tag_name: 'v1.3.1'
+          name: 'Isai Music Player v1.3.1'
+          draft: false
+          prerelease: false
+          make_latest: true
           body: |
-            ## 🎵 Isai Offline Music Player v1.3.0
+            ## 🎵 Isai Music Player v1.3.1
             
-            Download and install the APK directly on your Android phone!
+            Install the updated APK on your Android phone!
             
-            ### ✨ What's New in v1.3.0:
-            - **Picture Disc Vinyl Platter**: Full-bleed rotating album art across the disc with concentric groove overlay & specular lighting.
-            - **New App Logo**: Official high-contrast Isai note emblem with vinyl orange accent.
-            - **Tonearm Touch Controls**: Tap anywhere along the tonearm to effortlessly toggle between playing and paused.
-            - **Draggable Vinyl Scrubbing**: Drag across the spinning record to scrub audio smoothly.
-            - **One UI Compact Sorting**: Click the arrow to toggle Ascending/Descending; click the label to cycle Date Added -> Name -> Artist.
-            - **Top Bar Branding**: Polished header with orange highlighted final letter (`Isa` in white, `i` in orange).
+            ### ✨ What's New in v1.3.1:
+            - **Android SAF Folder Picker**: Full folder tree selection with the native **"USE THIS FOLDER"** confirmation button. Imports all audio tracks across the chosen directory.
+            - **Status Bar & Camera Cutout Spacing**: Dynamically lowered top bar with `WindowInsetsCompat` status bar insets. No more overlapping with phone clock, SIM strength, or battery icons.
+            - **Call Recording & Voice Memo Filter**: Configure track prefixes (such as `Call`, `REC`, `Voice`) to automatically exclude call recordings from your library.
+            - **Direct Web-to-APK Parity**: Exact Samsung One UI categories (`Favourites`, `Playlists`, `Tracks`, `Albums`, `Artists`, `Folders`) and turntable stage matching the preview.
             
-            ### 📲 Installation Instructions:
+            ### 📲 How to Install on Android:
             1. Download `app-debug.apk` directly on your Android phone below.
-            2. Open the file and allow "Install from unknown sources" if prompted.
-            3. Enjoy high-fidelity offline vinyl listening!
+            2. Tap the downloaded file to install. Allow "Install from unknown sources" if prompted.
+            3. Open **Isai** and enjoy!
           files: outputs/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

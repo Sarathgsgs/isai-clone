@@ -216,3 +216,26 @@ When scanning local storage directories (e.g. phone storage or Downloads), call 
    - `filteredTracks`, `albums`, `artists`, `foldersWithCounts`, and auto-play queues dynamically avoid all excluded tracks.
    - Samsung Music subheader displays a subtle indicator when tracks are excluded (e.g., `🛡️ X excluded`) with a link to manage them.
    - **Folders Tab & Add Music Modal**: Include status banners and quick-access "Change" buttons.
+
+---
+
+## 8. Android SAF Folder Picker & Status Bar Inset Fixes
+
+### 1. Android SAF Folder Selection ("USE THIS FOLDER")
+- **Problem**: In previous builds, tapping "Select Folder" on Android opened a single-file document chooser rather than the folder picker. The system "USE THIS FOLDER" button was missing, forcing the user to pick only one song.
+- **Solution**:
+  - Implemented `ActivityResultContracts.OpenDocumentTree()` in `MainActivity.kt`.
+  - Added `IsaiAndroid.openFolderPicker()` and `IsaiAndroid.openFilePicker()` via a native `@JavascriptInterface` bridge.
+  - When the user taps **Select Folder**, Android launches `ACTION_OPEN_DOCUMENT_TREE`, displaying the native Android folder browser with the wide **"USE THIS FOLDER"** button at the bottom.
+  - Recursively scans audio files within the selected directory tree, extracts metadata, filters out call recordings, and passes the entire directory to the player.
+  - Added `content_stream` proxy handler in `MainActivity.kt` to stream audio directly from content URIs.
+
+### 2. Status Bar & Notification Overlap
+- **Problem**: Edge-to-edge mode pushed the app header directly beneath the phone's clock, SIM network, and battery icons.
+- **Solution**:
+  - Added `ViewCompat.setOnApplyWindowInsetsListener(isaiWebView)` in `MainActivity.kt` to dynamically pad the WebView content down by the exact status bar height (`insets.getInsets(Type.statusBars()).top`).
+  - Added safe area viewport tags and increased top header padding (`pt-6 pb-2`) in `App.tsx` and `NowPlayingView.tsx`.
+
+### 3. Build Hardening
+- Preserved `package-lock.json` with `--legacy-peer-deps`.
+- Hardened `.github/workflows/build-apk.yml` with error-tolerant fallbacks, Node.js 22, and `workflow_dispatch` release triggers.
