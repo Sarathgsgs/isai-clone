@@ -32,8 +32,13 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const isScratchingRef = useRef<boolean>(false);
   const [isScratchingUI, setIsScratchingUI] = useState<boolean>(false);
+  const [imgError, setImgError] = useState<boolean>(false);
   const lastAngleRef = useRef<number>(0);
   const totalScratchedAngleRef = useRef<number>(0);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [albumArt]);
 
   useEffect(() => {
     let lastTimestamp = performance.now();
@@ -186,10 +191,11 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
         }}
       >
         {/* 1. Full-Bleed Track Image Picture Disc */}
-        {albumArt ? (
+        {albumArt && !imgError ? (
           <img
             src={albumArt}
             alt="Track Artwork"
+            onError={() => setImgError(true)}
             className="absolute inset-0 w-full h-full object-cover rounded-full pointer-events-none select-none"
             crossOrigin="anonymous"
           />

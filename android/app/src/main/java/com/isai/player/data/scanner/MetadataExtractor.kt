@@ -34,10 +34,26 @@ class MetadataExtractor @Inject constructor(
         var rawDuration: String? = null
         var embeddedArtBytes: ByteArray? = null
 
+        var pfd: android.os.ParcelFileDescriptor? = null
         try {
-            retriever.setDataSource(context, Uri.parse(file.uriString))
+            val uri = Uri.parse(file.uriString)
+            try {
+                pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                if (pfd != null) {
+                    retriever.setDataSource(pfd.fileDescriptor)
+                } else {
+                    retriever.setDataSource(context, uri)
+                }
+            } catch (_: Exception) {
+                try {
+                    retriever.setDataSource(context, uri)
+                } catch (_: Exception) {}
+            }
+
             rawTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
             rawArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
             rawAlbum = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
             rawAlbumArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
             rawYear = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
@@ -49,6 +65,9 @@ class MetadataExtractor @Inject constructor(
         } catch (e: Exception) {
             // Unreadable tags or unsupported container, proceed with filename fallback
         } finally {
+            try {
+                pfd?.close()
+            } catch (_: Exception) {}
             try {
                 retriever.release()
             } catch (e: Exception) {

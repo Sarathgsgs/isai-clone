@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.media.MediaMetadataRetriever
+import androidx.documentfile.provider.DocumentFile
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.view.ViewGroup
@@ -36,6 +38,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import android.content.ContentUris
+import android.os.Build
+import android.provider.MediaStore
+import android.util.Size
+import com.isai.player.data.db.dao.TrackDao
+import com.isai.player.data.model.toEntity
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.net.URLDecoder
@@ -51,8 +61,23 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var metadataExtractor: MetadataExtractor
 
+    @Inject
+    lateinit var trackDao: TrackDao
+
     private var webView: WebView? = null
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+
+    // Permission launcher for Media & Notifications
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.entries.any { it.value }
+        if (granted) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                scanMediaStoreAudioInternal()
+            }
+        }
+    }
 
     // Fallback file chooser launcher for <input type="file">
     private val webChromeFileChooserLauncher = registerForActivityResult(
@@ -219,7 +244,8 @@ class MainActivity : ComponentActivity() {
                 if ((host == "isai.local" || host == "localhost") && url.path == "/artwork") {
                     val id = url.getQueryParameter("id")
                     if (!id.isNullOrBlank()) {
-                        val artFile = File(cacheDir, "art/$id.jpg")
+                        val cleanId = id.removePrefix("media-").removePrefix("tree-").removePrefix("file-")
+                        val artFile = File(cacheDir, "art/$cleanId.jpg")
                         if (artFile.exists() && artFile.length() > 0) {
                             try {
                                 val headers = mapOf(
@@ -227,6 +253,77 @@ class MainActivity : ComponentActivity() {
                                     "Cache-Control" to "public, max-age=86400"
                                 )
                                 return WebResourceResponse("image/jpeg", null, 200, "OK", headers, FileInputStream(artFile))
+                            } catch (_: Exception) {}
+                        }
+
+                        // Try extracting directly from URI on demand
+                        val uriParam = url.getQueryParameter("uri")
+                        if (!uriParam.isNullOrBlank()) {
+                            try {
+                                val parsedUri = Uri.parse(uriParam)
+                                val retriever = MediaMetadataRetriever()
+                                val pfd = contentResolver.openFileDescriptor(parsedUri, "r")
+                                if (pfd != null) {
+                                    pfd.use { fd ->
+                                        retriever.setDataSource(fd.fileDescriptor)
+                                        val picBytes = retriever.embeddedPicture
+                                        if (picBytes != null && picBytes.isNotEmpty()) {
+                                            try {
+                                                val artDir = File(cacheDir, "art")
+                                                artDir.mkdirs()
+                                                File(artDir, "$cleanId.jpg").writeBytes(picBytes)
+                                            } catch (_: Exception) {}
+
+                                            val headers = mapOf(
+                                                "Access-Control-Allow-Origin" to "*",
+                                                "Cache-Control" to "public, max-age=86400"
+                                            )
+                                            return WebResourceResponse(
+                                                "image/jpeg",
+                                                null,
+                                                200,
+                                                "OK",
+                                                headers,
+                                                ByteArrayInputStream(picBytes)
+                                            )
+                                        }
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+
+                        // Try loading MediaStore thumbnail if on Android 10+ (API 29+)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && id.startsWith("media-")) {
+                            val trackId = cleanId.toLongOrNull()
+                            if (trackId != null) {
+                                try {
+                                    val trackUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId)
+                                    val bitmap = contentResolver.loadThumbnail(trackUri, Size(512, 512), null)
+                                    val baos = ByteArrayOutputStream()
+                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, baos)
+                                    val headers = mapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Cache-Control" to "public, max-age=86400"
+                                    )
+                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(baos.toByteArray()))
+                                } catch (_: Exception) {}
+                            }
+                        }
+
+                        // Try loading album art URI
+                        val albumId = url.getQueryParameter("albumId")?.toLongOrNull()
+                        if (albumId != null && albumId >= 0) {
+                            try {
+                                val sArtworkUri = Uri.parse("content://media/external/audio/albumart")
+                                val albumArtUri = ContentUris.withAppendedId(sArtworkUri, albumId)
+                                val inputStream = contentResolver.openInputStream(albumArtUri)
+                                if (inputStream != null) {
+                                    val headers = mapOf(
+                                        "Access-Control-Allow-Origin" to "*",
+                                        "Cache-Control" to "public, max-age=86400"
+                                    )
+                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, inputStream)
+                                }
                             } catch (_: Exception) {}
                         }
                     }
@@ -367,6 +464,20 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun scanAllDeviceAudio() {
+            lifecycleScope.launch(Dispatchers.IO) {
+                scanMediaStoreAudioInternal()
+            }
+        }
+
+        @JavascriptInterface
+        fun requestPermissions() {
+            runOnUiThread {
+                requestStorageAndNotificationPermissions()
+            }
+        }
+
+        @JavascriptInterface
         fun playTrack(
             id: String,
             uri: String,
@@ -377,14 +488,20 @@ class MainActivity : ComponentActivity() {
             durationMs: Long,
             positionMs: Long
         ) {
+            val trackId = try {
+                id.removePrefix("tree-").removePrefix("file-").removePrefix("media-").toLong()
+            } catch (_: Exception) {
+                id.hashCode().toLong()
+            }
+
             val track = Track(
-                id = id.hashCode().toLong(),
+                id = trackId,
                 uri = uri,
-                title = title,
-                titleSort = title,
-                artist = artist,
-                albumArtist = artist,
-                album = album,
+                title = title.ifBlank { "Unknown Title" },
+                titleSort = title.lowercase(),
+                artist = artist.ifBlank { "Unknown Artist" },
+                albumArtist = artist.ifBlank { "Unknown Artist" },
+                album = album.ifBlank { "Unknown Album" },
                 year = 2024,
                 trackNo = 1,
                 discNo = 1,
@@ -400,10 +517,23 @@ class MainActivity : ComponentActivity() {
                 lyricsUri = null,
                 hasLyrics = false
             )
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    trackDao.insertTrack(track.toEntity())
+                } catch (e: Exception) {
+                    android.util.Log.w("IsaiAndroid", "Error inserting track into DB: ${e.message}")
+                }
+            }
+
             runOnUiThread {
-                playerController.playTrack(track, listOf(track))
-                if (positionMs > 0) {
-                    playerController.seekTo(positionMs)
+                try {
+                    playerController.playTrack(track, listOf(track))
+                    if (positionMs > 0) {
+                        playerController.seekTo(positionMs)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("IsaiAndroid", "Error playing track: ${e.message}", e)
                 }
             }
         }
@@ -411,14 +541,18 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun pauseTrack() {
             runOnUiThread {
-                playerController.pause()
+                try {
+                    playerController.pause()
+                } catch (_: Exception) {}
             }
         }
 
         @JavascriptInterface
         fun resumeTrack() {
             runOnUiThread {
-                playerController.play()
+                try {
+                    playerController.play()
+                } catch (_: Exception) {}
             }
         }
 
@@ -455,6 +589,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun scanAndImportFolder(treeUri: Uri) {
         val tracks = JSONArray()
         var folderName = "Music Folder"
+        val folderId = "folder-" + Math.abs(treeUri.toString().hashCode())
 
         try {
             val rootDocId = if (DocumentsContract.isDocumentUri(this, treeUri)) {
@@ -463,20 +598,33 @@ class MainActivity : ComponentActivity() {
                 DocumentsContract.getTreeDocumentId(treeUri)
             }
 
-            val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-            contentResolver.query(
-                treeDocUri,
-                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                    if (nameIndex >= 0) {
-                        val name = cursor.getString(nameIndex)
-                        if (!name.isNullOrBlank()) folderName = name
+            val docFile = DocumentFile.fromTreeUri(this, treeUri)
+            val docFileName = docFile?.name
+            if (!docFileName.isNullOrBlank()) {
+                folderName = docFileName
+            } else {
+                val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
+                contentResolver.query(
+                    treeDocUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                        if (nameIndex >= 0) {
+                            val name = cursor.getString(nameIndex)
+                            if (!name.isNullOrBlank()) folderName = name
+                        }
                     }
+                }
+            }
+
+            if (folderName == "Music Folder" && rootDocId.isNotBlank()) {
+                val segment = rootDocId.substringAfterLast(':').substringAfterLast('/')
+                if (segment.isNotBlank()) {
+                    folderName = segment
                 }
             }
 
@@ -487,8 +635,9 @@ class MainActivity : ComponentActivity() {
 
         runOnUiThread {
             val escapedName = JSONObject.quote(folderName)
+            val escapedId = JSONObject.quote(folderId)
             webView?.evaluateJavascript(
-                "window.__isaiOnFolderImported && window.__isaiOnFolderImported($escapedName, $tracks);",
+                "window.__isaiOnFolderImported && window.__isaiOnFolderImported($escapedName, $tracks, $escapedId);",
                 null
             )
         }
@@ -557,11 +706,20 @@ class MainActivity : ComponentActivity() {
                         if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
                         if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
                         if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
-                        if (!trackEntity.artPath.isNullOrBlank()) {
-                            artUrl = "https://isai.local/artwork?id=" + trackEntity.id
-                        }
+                        val trackId = trackEntity.id.toString()
+                        val encodedDocUri = URLEncoder.encode(docUri.toString(), "UTF-8")
+                        artUrl = "https://isai.local/artwork?id=$trackId&uri=$encodedDocUri"
+                        try {
+                            trackDao.insertTrack(trackEntity)
+                        } catch (_: Exception) {}
                     } catch (e: Exception) {
                         android.util.Log.w("IsaiMetadata", "Error reading metadata: ${e.message}")
+                    }
+
+                    if (artUrl == null) {
+                        val fallbackId = Math.abs(docId.hashCode()).toString()
+                        val encodedDocUri = URLEncoder.encode(docUri.toString(), "UTF-8")
+                        artUrl = "https://isai.local/artwork?id=$fallbackId&uri=$encodedDocUri"
                     }
 
                     val trk = JSONObject().apply {
@@ -571,7 +729,7 @@ class MainActivity : ComponentActivity() {
                         put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
                         put("artist", extractedArtist)
                         put("album", extractedAlbum)
-                        if (artUrl != null) put("artPath", artUrl)
+                        put("artPath", artUrl)
                         put("folderPath", "$folderName/$displayName")
                         put("mimeType", if (mimeType.isNotBlank()) mimeType else "audio/mpeg")
                         put("sizeBytes", size)
@@ -623,10 +781,19 @@ class MainActivity : ComponentActivity() {
                     if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
                     if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
                     if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
-                    if (!trackEntity.artPath.isNullOrBlank()) {
-                        artUrl = "https://isai.local/artwork?id=" + trackEntity.id
-                    }
+                    val trackId = trackEntity.id.toString()
+                    val encodedUri = URLEncoder.encode(uri.toString(), "UTF-8")
+                    artUrl = "https://isai.local/artwork?id=$trackId&uri=$encodedUri"
+                    try {
+                        trackDao.insertTrack(trackEntity)
+                    } catch (_: Exception) {}
                 } catch (_: Exception) {}
+
+                if (artUrl == null) {
+                    val fallbackId = Math.abs(uri.toString().hashCode()).toString()
+                    val encodedUri = URLEncoder.encode(uri.toString(), "UTF-8")
+                    artUrl = "https://isai.local/artwork?id=$fallbackId&uri=$encodedUri"
+                }
 
                 val trk = JSONObject().apply {
                     put("id", "file-" + uri.toString().hashCode().toString())
@@ -635,7 +802,7 @@ class MainActivity : ComponentActivity() {
                     put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
                     put("artist", extractedArtist)
                     put("album", extractedAlbum)
-                    if (artUrl != null) put("artPath", artUrl)
+                    put("artPath", artUrl)
                     put("folderPath", "Imported Tracks/$displayName")
                     put("mimeType", mimeType)
                     put("sizeBytes", size)
@@ -681,6 +848,135 @@ class MainActivity : ComponentActivity() {
             lower.endsWith(".wav") -> "audio/wav"
             lower.endsWith(".ogg") -> "audio/ogg"
             else -> "application/octet-stream"
+        }
+    }
+
+    fun requestStorageAndNotificationPermissions() {
+        val permissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.READ_MEDIA_AUDIO)
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            permissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    private suspend fun scanMediaStoreAudioInternal() {
+        val tracks = JSONArray()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.ALBUM_ID
+        )
+
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 15000"
+        val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
+        val entitiesToInsert = mutableListOf<com.isai.player.data.db.entity.TrackEntity>()
+
+        try {
+            contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val mimeCol = cursor.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                val albumIdCol = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+
+                while (cursor.moveToNext() && tracks.length() < 1000) {
+                    val id = cursor.getLong(idCol)
+                    val title = cursor.getString(titleCol) ?: "Track $id"
+                    val artist = cursor.getString(artistCol) ?: "Unknown Artist"
+                    val album = cursor.getString(albumCol) ?: "Downloads & Storage"
+                    val durationMs = cursor.getLong(durationCol).coerceAtLeast(0L)
+                    val dataPath = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                    val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "audio/mpeg" else "audio/mpeg"
+                    val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                    val albumId = if (albumIdCol >= 0) cursor.getLong(albumIdCol) else -1L
+
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(contentUri.toString(), "UTF-8")
+                    val artUrl = "https://isai.local/artwork?id=media-$id&albumId=$albumId"
+
+                    val folderName = if (dataPath.isNotBlank() && dataPath.contains('/')) {
+                        dataPath.substringBeforeLast('/').substringAfterLast('/')
+                    } else {
+                        album
+                    }
+
+                    val entity = com.isai.player.data.db.entity.TrackEntity(
+                        id = id,
+                        uri = contentUri.toString(),
+                        title = title,
+                        titleSort = title.lowercase(),
+                        artist = artist,
+                        albumArtist = artist,
+                        album = album,
+                        year = 2024,
+                        trackNo = 1,
+                        discNo = 1,
+                        durationMs = if (durationMs > 0) durationMs else 180000L,
+                        mimeType = mime,
+                        sizeBytes = size,
+                        lastModified = System.currentTimeMillis(),
+                        artPath = artUrl,
+                        folderPath = folderName,
+                        dateAdded = System.currentTimeMillis(),
+                        isMissing = false,
+                        relativePath = null,
+                        lyricsUri = null,
+                        hasLyrics = false
+                    )
+                    entitiesToInsert.add(entity)
+
+                    val trk = JSONObject().apply {
+                        put("id", id.toString())
+                        put("uri", contentUri.toString())
+                        put("streamUrl", streamUrl)
+                        put("title", title)
+                        put("artist", artist)
+                        put("album", album)
+                        put("artPath", artUrl)
+                        put("folderPath", "$folderName/$title")
+                        put("mimeType", mime)
+                        put("sizeBytes", size)
+                        put("durationMs", entity.durationMs)
+                    }
+                    tracks.put(trk)
+                }
+            }
+
+            if (entitiesToInsert.isNotEmpty()) {
+                try {
+                    trackDao.insertTracks(entitiesToInsert)
+                } catch (e: Exception) {
+                    android.util.Log.w("IsaiAndroid", "Failed to batch insert MediaStore tracks: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("IsaiAndroid", "Error querying MediaStore: ${e.message}", e)
+        }
+
+        runOnUiThread {
+            webView?.evaluateJavascript(
+                "window.__isaiOnFolderImported && window.__isaiOnFolderImported(\"Phone Storage & Downloads\", $tracks);",
+                null
+            )
         }
     }
 

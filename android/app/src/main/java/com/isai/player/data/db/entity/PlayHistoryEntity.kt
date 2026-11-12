@@ -8,14 +8,6 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "play_history",
-    foreignKeys = [
-        ForeignKey(
-            entity = TrackEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["track_id"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
     indices = [
         Index(value = ["track_id"]),
         Index(value = ["played_at"])

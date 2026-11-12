@@ -68,7 +68,11 @@ class PlayerController @Inject constructor(
         connectToService()
     }
 
-    private fun connectToService() {
+    private fun connectToService(onConnected: (() -> Unit)? = null) {
+        if (mediaController != null) {
+            onConnected?.invoke()
+            return
+        }
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
 
@@ -79,8 +83,9 @@ class PlayerController @Inject constructor(
                     mediaController = controller
                     setupPlayerListener(controller)
                     syncPlayerState(controller)
+                    onConnected?.invoke()
                 } catch (e: Exception) {
-                    // Service connection failed or deferred
+                    android.util.Log.e("IsaiPlayer", "Service connection failed: ${e.message}")
                 }
             },
             ContextCompat.getMainExecutor(context)
@@ -252,14 +257,26 @@ class PlayerController @Inject constructor(
     }
 
     fun playTrack(track: Track, queue: List<Track>, startIndex: Int = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)) {
-        val player = mediaController ?: return
-        val mediaItems = queue.map(MediaItemMapper::toMediaItem)
-        player.setMediaItems(mediaItems, startIndex, 0L)
-        player.prepare()
-        player.play()
+        val player = mediaController
+        if (player == null) {
+            connectToService {
+                playTrack(track, queue, startIndex)
+            }
+            return
+        }
+        try {
+            val mediaItems = queue.map(MediaItemMapper::toMediaItem)
+            player.setMediaItems(mediaItems, startIndex, 0L)
+            player.prepare()
+            player.play()
+        } catch (e: Exception) {
+            android.util.Log.e("IsaiPlayer", "Error preparing playback", e)
+        }
 
         controllerScope.launch {
-            queueStore.saveQueue(queue)
+            try {
+                queueStore.saveQueue(queue)
+            } catch (_: Exception) {}
         }
     }
 

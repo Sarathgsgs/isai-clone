@@ -247,7 +247,7 @@ export default function App() {
     try {
       const serializable = tracks.map((t) => ({
         ...t,
-        uri: t.isCustomFile ? '' : t.uri,
+        uri: t.uri.startsWith('blob:') ? '' : t.uri,
       }));
       localStorage.setItem('isai_tracks', JSON.stringify(serializable));
     } catch {
@@ -288,9 +288,9 @@ export default function App() {
 
   // Android Native Folder (SAF Document Tree) and Multi-File Listeners
   useEffect(() => {
-    (window as any).__isaiOnFolderImported = (folderName: string, rawTracks: any[]) => {
+    (window as any).__isaiOnFolderImported = (folderName: string, rawTracks: any[], customFolderId?: string) => {
       if (!rawTracks || rawTracks.length === 0) return;
-      const folderId = `folder-${folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+      const folderId = customFolderId || `folder-${folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}-${Date.now().toString(36)}`;
       const newTracks: Track[] = rawTracks.map((raw) => {
         const waveform = Array.from({ length: 60 }, () =>
           Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
@@ -298,9 +298,11 @@ export default function App() {
         return {
           id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           uri: raw.streamUrl || raw.uri,
+          nativeUri: raw.uri,
           title: raw.title || 'Audio Track',
           artist: raw.artist || 'Local Artist',
           album: raw.album || folderName,
+          artPath: raw.artPath || undefined,
           durationMs: raw.durationMs || 180000,
           mimeType: raw.mimeType || 'audio/mpeg',
           sizeBytes: raw.sizeBytes,
@@ -322,9 +324,7 @@ export default function App() {
       }
 
       setFolders((prevFolders) => {
-        const existing = prevFolders.find(
-          (f) => f.id === folderId || f.name.toLowerCase() === folderName.toLowerCase()
-        );
+        const existing = prevFolders.find((f) => f.id === folderId);
         if (existing) {
           return prevFolders.map((f) =>
             f.id === existing.id
@@ -359,9 +359,11 @@ export default function App() {
         return {
           id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           uri: raw.streamUrl || raw.uri,
+          nativeUri: raw.uri,
           title: raw.title || 'Audio Track',
           artist: raw.artist || 'Local Artist',
           album: raw.album || folderName,
+          artPath: raw.artPath || undefined,
           durationMs: raw.durationMs || 180000,
           mimeType: raw.mimeType || 'audio/mpeg',
           sizeBytes: raw.sizeBytes,
@@ -1259,18 +1261,26 @@ export default function App() {
                 <div className="py-20 text-center text-neutral-500 text-sm flex flex-col items-center gap-3">
                   <Music className="w-12 h-12 text-neutral-700" />
                   <p>No tracks found matching your filter</p>
-                  <button
-                    onClick={() => {
-                      if ((window as any).IsaiAndroid?.openFolderPicker) {
-                        (window as any).IsaiAndroid.openFolderPicker();
-                      } else {
-                        setIsAddFolderModalOpen(true);
-                      }
-                    }}
-                    className="px-4 py-2 rounded-full bg-neutral-900 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white"
-                  >
-                    Add Music Directory / Downloads
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        if ((window as any).IsaiAndroid?.scanAllDeviceAudio) {
+                          (window as any).IsaiAndroid.scanAllDeviceAudio();
+                        } else {
+                          setIsAddFolderModalOpen(true);
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold shadow-lg transition-transform active:scale-95 cursor-pointer"
+                    >
+                      Scan All Songs on Phone (Including Downloads)
+                    </button>
+                    <button
+                      onClick={() => setIsAddFolderModalOpen(true)}
+                      className="px-4 py-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      Choose Specific Folder / Files
+                    </button>
+                  </div>
                 </div>
               )
             ) : (
@@ -1284,14 +1294,20 @@ export default function App() {
                   >
                     {/* Left: Album Art Cover (Rounded Square matching One UI) */}
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
-                        {track.artPath ? (
-                          <img src={track.artPath} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
-                            <Music className="w-5 h-5 text-neutral-300" />
-                          </div>
+                      <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
+                        {track.artPath && (
+                          <img
+                            src={track.artPath}
+                            alt=""
+                            onError={(e) => {
+                              (e.currentTarget as HTMLElement).style.display = 'none';
+                            }}
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
                         )}
+                        <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+                          <Music className="w-5 h-5 text-neutral-300" />
+                        </div>
                       </div>
 
                       {/* Title & Artist */}
@@ -1334,14 +1350,20 @@ export default function App() {
                 className="flex flex-col gap-2 cursor-pointer group"
               >
                 {/* Large Square Rounded Artwork */}
-                <div className="w-full aspect-square rounded-2xl overflow-hidden bg-neutral-900 border border-white/5 shadow-md">
-                  {album.artPath ? (
-                    <img src={album.artPath} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
-                      <Music className="w-10 h-10" />
-                    </div>
+                <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-neutral-900 border border-white/5 shadow-md">
+                  {album.artPath && (
+                    <img
+                      src={album.artPath}
+                      alt=""
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
+                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
                   )}
+                  <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+                    <Music className="w-10 h-10" />
+                  </div>
                 </div>
 
                 <div className="min-w-0 px-1">
@@ -1369,12 +1391,20 @@ export default function App() {
                 }}
                 className="flex items-center gap-3.5 py-2.5 px-2 rounded-2xl hover:bg-neutral-900/60 cursor-pointer"
               >
-                <div className="w-12 h-12 rounded-full overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
-                  {artist.artPath ? (
-                    <img src={artist.artPath} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <Music className="w-5 h-5 text-neutral-400" />
+                <div className="relative w-12 h-12 rounded-full overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
+                  {artist.artPath && (
+                    <img
+                      src={artist.artPath}
+                      alt=""
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
                   )}
+                  <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+                    <Music className="w-5 h-5" />
+                  </div>
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-sm font-semibold text-white truncate">{artist.name}</h4>
@@ -1562,9 +1592,39 @@ export default function App() {
               </button>
             </div>
 
-            {/* Selection Options - Exactly 2 Options */}
+            {/* Selection Options - 3 Clear Options */}
             <div className="flex flex-col gap-3">
-              {/* Option 1: Select Folder */}
+              {/* Option 1: Scan All Songs on Phone (Recommended - Bypass Android 11+ Downloads folder restrictions) */}
+              <button
+                onClick={() => {
+                  setIsAddFolderModalOpen(false);
+                  if ((window as any).IsaiAndroid?.scanAllDeviceAudio) {
+                    (window as any).IsaiAndroid.scanAllDeviceAudio();
+                  } else {
+                    folderInputRef.current?.click();
+                  }
+                }}
+                className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/10 hover:from-amber-500/30 hover:to-orange-500/20 border border-amber-500/50 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99] shadow-lg shadow-amber-500/10"
+              >
+                <div className="p-2.5 rounded-xl bg-amber-500 text-black flex-shrink-0 group-hover:scale-110 transition-transform">
+                  <Music className="w-6 h-6 stroke-[2.5]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                      Scan All Songs on Phone
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
+                    Instantly scans all audio tracks on your device, including the <strong>Downloads</strong> folder, Music, and SD card, bypassing Android privacy restrictions.
+                  </p>
+                </div>
+              </button>
+
+              {/* Option 2: Select Folder */}
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
@@ -1574,22 +1634,22 @@ export default function App() {
                     folderInputRef.current?.click();
                   }
                 }}
-                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-amber-500/30 hover:border-amber-500/60 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
+                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 hover:border-amber-500/50 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
               >
-                <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform">
+                <div className="p-2.5 rounded-xl bg-neutral-800 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform">
                   <Folder className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
-                    Select Folder
+                    Select Music Folder
                   </span>
                   <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                    Select any music folder or directory on your device (including Downloads, Music albums, etc.) to immediately load and run.
+                    Pick a specific music folder on your device storage (Music, Audiobooks, Albums).
                   </p>
                 </div>
               </button>
 
-              {/* Option 2: Select Separate Music Tracks */}
+              {/* Option 3: Select Separate Music Tracks */}
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
@@ -1602,14 +1662,14 @@ export default function App() {
                 className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 hover:border-white/20 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
               >
                 <div className="p-2.5 rounded-xl bg-neutral-800 text-neutral-300 flex-shrink-0 group-hover:scale-110 transition-transform">
-                  <Music className="w-6 h-6" />
+                  <Upload className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
-                    Select Separate Music Tracks
+                    Select Individual Audio Files
                   </span>
                   <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                    Choose one or multiple individual audio tracks (MP3, WAV, FLAC, M4A, OGG) from anywhere on your device.
+                    Choose specific audio files (MP3, WAV, FLAC, M4A) directly from Downloads or file manager without restrictions.
                   </p>
                 </div>
               </button>

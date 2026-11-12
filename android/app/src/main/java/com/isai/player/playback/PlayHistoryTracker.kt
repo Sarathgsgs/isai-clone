@@ -47,7 +47,9 @@ class PlayHistoryTracker @Inject constructor(
         if (accumulatedPlayedMs >= thresholdMs) {
             hasLoggedCurrentTrack = true
             scope.launch(Dispatchers.IO) {
-                historyRepository.recordPlay(trackId)
+                try {
+                    historyRepository.recordPlay(trackId)
+                } catch (_: Exception) {}
             }
         }
     }

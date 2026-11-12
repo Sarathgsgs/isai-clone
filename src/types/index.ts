@@ -8,6 +8,7 @@ export type ThemeMode = 'dark' | 'light';
 export interface Track {
   id: string;
   uri: string;
+  nativeUri?: string;
   title: string;
   artist: string;
   album: string;

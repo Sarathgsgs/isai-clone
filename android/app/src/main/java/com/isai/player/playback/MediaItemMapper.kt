@@ -28,11 +28,29 @@ object MediaItemMapper {
         }
 
         val artworkUri = track.artPath?.let { path ->
-            val file = File(path)
-            if (file.exists()) Uri.fromFile(file) else null
+            if (path.startsWith("content://") || path.startsWith("http://") || path.startsWith("https://")) {
+                Uri.parse(path)
+            } else {
+                com.isai.player.playback.car.CarArtworkProvider.buildArtworkUri(
+                    com.isai.player.BuildConfig.APPLICATION_ID,
+                    track.id
+                )
+            }
         }
 
-        val metadata = MediaMetadata.Builder()
+        val rawUri = track.uri
+        val playableUri = if (rawUri.startsWith("https://isai.local/content_stream?uri=") || rawUri.startsWith("http://localhost/content_stream?uri=")) {
+            try {
+                val param = Uri.parse(rawUri).getQueryParameter("uri")
+                if (!param.isNullOrBlank()) Uri.parse(param) else Uri.parse(rawUri)
+            } catch (_: Exception) {
+                Uri.parse(rawUri)
+            }
+        } else {
+            Uri.parse(rawUri)
+        }
+
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
@@ -43,11 +61,12 @@ object MediaItemMapper {
             .setRecordingYear(track.year)
             .setExtras(extras)
             .setIsPlayable(true)
-            .build()
+
+        val metadata = metadataBuilder.build()
 
         return MediaItem.Builder()
             .setMediaId(track.id.toString())
-            .setUri(Uri.parse(track.uri))
+            .setUri(playableUri)
             .setMediaMetadata(metadata)
             .build()
     }

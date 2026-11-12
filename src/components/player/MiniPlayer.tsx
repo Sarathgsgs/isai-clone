@@ -43,17 +43,19 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         {/* Track Art & Title */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-neutral-900 border border-white/10 flex items-center justify-center shadow">
-            {currentTrack.artPath ? (
+            {currentTrack.artPath && (
               <img
                 src={currentTrack.artPath}
                 alt=""
-                className={`w-full h-full object-cover ${isPlaying ? 'animate-[spin_5s_linear_infinite]' : ''}`}
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+                className={`absolute inset-0 w-full h-full object-cover ${isPlaying ? 'animate-[spin_5s_linear_infinite]' : ''}`}
               />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-amber-600 to-neutral-900 text-amber-200">
-                <Music className="w-4 h-4" />
-              </div>
             )}
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-amber-600 to-neutral-900 text-amber-200">
+              <Music className="w-4 h-4" />
+            </div>
             <div className="absolute w-2 h-2 rounded-full bg-black border border-white/40" />
           </div>
 

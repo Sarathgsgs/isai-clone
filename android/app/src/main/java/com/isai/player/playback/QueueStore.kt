@@ -12,15 +12,22 @@ class QueueStore @Inject constructor(
     private val queueRepository: QueueRepository
 ) {
     suspend fun saveQueue(tracks: List<Track>) = withContext(Dispatchers.IO) {
-        queueRepository.saveQueue(tracks.map { it.id })
+        try {
+            queueRepository.saveQueue(tracks.map { it.id })
+        } catch (_: Exception) {}
     }
 
     suspend fun restoreQueue(): List<Track> = withContext(Dispatchers.IO) {
-        queueRepository.getQueue()
+        try {
+            queueRepository.getQueue()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     suspend fun clearQueue() = withContext(Dispatchers.IO) {
-        queueRepository.clearQueue()
+        try {
+            queueRepository.clearQueue()
+        } catch (_: Exception) {}
     }
 }
-

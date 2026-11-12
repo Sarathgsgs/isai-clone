@@ -8,14 +8,6 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "queue_items",
-    foreignKeys = [
-        ForeignKey(
-            entity = TrackEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["track_id"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
     indices = [
         Index(value = ["track_id"])
     ]

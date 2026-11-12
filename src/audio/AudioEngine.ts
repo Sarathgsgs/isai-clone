@@ -145,7 +145,7 @@ export class AudioEngine {
     if (isaiAndroid?.playTrack) {
       isaiAndroid.playTrack(
         track.id,
-        track.uri,
+        track.nativeUri || track.uri,
         track.title || 'Unknown Title',
         track.artist || 'Unknown Artist',
         track.album || 'Unknown Album',
