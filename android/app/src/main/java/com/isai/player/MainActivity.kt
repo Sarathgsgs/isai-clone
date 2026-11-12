@@ -131,6 +131,11 @@ class MainActivity : ComponentActivity() {
                 else -> emptyList()
             }
             if (uris.isNotEmpty()) {
+                for (u in uris) {
+                    try {
+                        contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (_: Exception) {}
+                }
                 lifecycleScope.launch(Dispatchers.IO) {
                     processSelectedUris(uris)
                 }

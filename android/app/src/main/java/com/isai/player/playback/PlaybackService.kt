@@ -273,7 +273,6 @@ class PlaybackService : MediaLibraryService() {
             .setChannelId(NotificationHelper.CHANNEL_ID)
             .setChannelName(R.string.playback_notification_channel_name)
             .setNotificationId(NotificationHelper.NOTIFICATION_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .build()
 
         setMediaNotificationProvider(notificationProvider)

@@ -122,7 +122,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Isai-v1.4.2-Debug-APK
+          name: Isai-v1.4.3-Debug-APK
           path: outputs/app-debug.apk
           if-no-files-found: error
 
@@ -130,15 +130,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: 'v1.4.2'
-          name: 'Isai Music Player v1.4.2'
+          tag_name: 'v1.4.3'
+          name: 'Isai Music Player v1.4.3'
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🎵 Isai Music Player v1.4.2 Release
+            ## 🎵 Isai Music Player v1.4.3 Release
 
-            ### ✨ Fixes & Improvements in v1.4.2:
+            ### ✨ Fixes & Improvements in v1.4.3:
+            1. **Clean Media3 Notification Compilation**: Fixed `DefaultMediaNotificationProvider` compilation by declaring standard `media3_notification_small_icon` in `res/values/drawables.xml` and removing unsupported builder methods.
+            2. **Guaranteed Audio Playback**: Persistable URI permissions are taken on every SAF folder tree and multi-file picker selection, ensuring ExoPlayer and ContentDataSource can stream any audio file directly.
+            3. **Crash-Proof Track Selection**: Eliminated `android.os.TransactionTooLargeException` by removing raw byte arrays from IPC transactions, and made service connection reconnection auto-recovering.
+            4. **Picture-Disc Artwork Rendering**: Fixed artPath state mapping in React and added on-demand dynamic artwork extraction via MediaMetadataRetriever directly to the spinning vinyl platter and library lists.
+            5. **Multi-Folder Directories Support**: DocumentFile SAF tree resolution creates distinct directory cards for each imported folder without name collisions.
             1. **Crash-Proof Track Selection**: Eliminated `android.os.TransactionTooLargeException` across MediaController Binder IPC by avoiding transmitting raw byte arrays, and made service connection reconnection auto-recovering so tracks play smoothly without closing.
             2. **Picture-Disc Artwork Rendering**: Fixed artPath state mapping in React and added on-demand dynamic artwork extraction via MediaMetadataRetriever directly to the spinning vinyl platter and library lists.
             3. **Multi-Folder Directories Support**: DocumentFile SAF tree resolution creates distinct directory cards for each imported folder without name collisions.
