@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Track, RepeatMode, PlayerSettings } from '../../types';
+import { audioEngine } from '../../audio/AudioEngine';
 import { TurntableStage } from '../turntable/TurntableStage';
 import { LyricsView } from './LyricsView';
 import { WaveformSeekBar } from './WaveformSeekBar';
@@ -17,20 +18,14 @@ import {
   Pause,
   Repeat,
   Repeat1,
-  ListMusic,
   Volume2,
   VolumeX,
-  Plus,
   Moon,
-  Clock,
 } from 'lucide-react';
 
 interface NowPlayingViewProps {
   currentTrack: Track | null;
   isPlaying: boolean;
-  progress: number; // 0..1
-  currentTime: number;
-  duration: number;
   volume: number;
   repeatMode: RepeatMode;
   isShuffled: boolean;
@@ -57,12 +52,9 @@ interface NowPlayingViewProps {
   onImportLyrics: (lrcText: string) => void;
 }
 
-export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
+export const NowPlayingView: React.FC<NowPlayingViewProps> = React.memo(({
   currentTrack,
   isPlaying,
-  progress,
-  currentTime,
-  duration,
   volume,
   repeatMode,
   isShuffled,
@@ -79,10 +71,8 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   onCycleRepeat,
   onToggleFavorite,
   onSetVolume,
-  onSetPlaybackRate,
   onToggleRpm,
   onCollapse,
-  onOpenQueue,
   onOpenEqualizer,
   onOpenSleepTimer,
   onOpenTrackInfo,
@@ -94,6 +84,27 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   const [prevVolume, setPrevVolume] = useState(1.0);
   const [seekDragTime, setSeekDragTime] = useState<number | null>(null);
   const isDraggingSeekRef = useRef<boolean>(false);
+
+  const [currentTime, setCurrentTime] = useState(() => audioEngine.getProgressSnapshot().currentTime);
+  const [duration, setDuration] = useState(() => {
+    const snap = audioEngine.getProgressSnapshot();
+    return snap.duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 180);
+  });
+
+  useEffect(() => {
+    const snap = audioEngine.getProgressSnapshot();
+    setCurrentTime(snap.currentTime);
+    setDuration(snap.duration || (currentTrack?.durationMs ? currentTrack.durationMs / 1000 : 180));
+
+    return audioEngine.subscribeProgress((cur, dur) => {
+      if (!isDraggingSeekRef.current) {
+        setCurrentTime(cur);
+      }
+      if (dur && isFinite(dur) && dur > 0) {
+        setDuration(dur);
+      }
+    });
+  }, [currentTrack?.id, currentTrack?.durationMs]);
 
   if (!currentTrack) return null;
 
@@ -116,6 +127,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
   };
 
   const safeDuration = duration > 0 ? duration : currentTrack.durationMs / 1000;
+  const progress = safeDuration > 0 ? Math.max(0, Math.min(1, currentTime / safeDuration)) : 0;
 
   return (
     <div
@@ -124,8 +136,8 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
         backgroundImage: 'radial-gradient(ellipse at 50% 0%, rgba(255, 138, 61, 0.08) 0%, transparent 60%)',
       }}
     >
-      {/* 1. Top Action Bar (Matching Samsung Music One UI: Collapse on left; Volume, EQ, Menu on right) */}
-      <div className="w-full max-w-lg mx-auto px-5 pt-11 sm:pt-14 pb-2 flex items-center justify-between flex-shrink-0 z-20">
+      {/* 1. Top Action Bar */}
+      <div className="w-full max-w-lg mx-auto px-5 pt-4 sm:pt-6 pb-2 flex items-center justify-between flex-shrink-0 z-20">
         <button
           onClick={onCollapse}
           className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white transition-colors"
@@ -145,9 +157,8 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
               {isMuted || volume === 0 ? <VolumeX className="w-5 h-5 text-amber-500" /> : <Volume2 className="w-5 h-5" />}
             </button>
 
-            {/* Floating Volume Popup Slider */}
             {showVolumeSlider && (
-              <div className="absolute right-0 top-12 p-3 bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex items-center gap-3 z-30 animate-fadeIn">
+              <div className="absolute right-0 top-12 p-3 bg-neutral-900 border border-white/15 rounded-2xl shadow-2xl flex items-center gap-3 z-30 animate-fadeIn">
                 <button onClick={handleToggleMute} className="text-white hover:text-amber-400">
                   {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-amber-500" /> : <Volume2 className="w-4 h-4" />}
                 </button>
@@ -167,7 +178,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             )}
           </div>
 
-          {/* Equalizer Shortcut Button */}
           <button
             onClick={onOpenEqualizer}
             className="p-2 rounded-full hover:bg-white/10 text-white transition-colors"
@@ -176,7 +186,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             <Sliders className="w-5 h-5" />
           </button>
 
-          {/* More Options / Track Info Menu */}
           <button
             onClick={onOpenTrackInfo}
             className="p-2 -mr-2 rounded-full hover:bg-white/10 text-white transition-colors"
@@ -187,7 +196,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Center Stage: Turntable Vinyl Platter / Disc with Tonearm */}
+      {/* 2. Center Stage */}
       <div className="flex-1 max-w-lg w-full mx-auto px-5 py-2 flex flex-col items-center justify-center min-h-0 overflow-hidden">
         {viewMode === 'turntable' ? (
           <div className="w-full flex items-center justify-center max-h-full">
@@ -207,7 +216,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             />
           </div>
         ) : (
-          <div className="w-full h-full max-h-[380px] rounded-3xl bg-[#141419]/90 border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+          <div className="w-full h-full max-h-[380px] rounded-3xl bg-[#141419] border border-white/10 shadow-2xl overflow-hidden flex flex-col">
             <LyricsView
               track={currentTrack}
               currentTimeMs={currentTime * 1000}
@@ -219,9 +228,8 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
         )}
       </div>
 
-      {/* 3. Lower Section: Title, Subtitle, Actions, Seekbar & Media Controls (Matching Samsung One UI) */}
+      {/* 3. Lower Section */}
       <div className="w-full max-w-lg mx-auto px-6 pb-8 pt-1 flex flex-col gap-4 flex-shrink-0 z-20">
-        {/* Track Title & Artist */}
         <div className="flex flex-col items-start min-w-0">
           <h2 className="text-xl sm:text-2xl font-bold text-white truncate max-w-full tracking-tight">
             {currentTrack.title}
@@ -231,9 +239,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
           </p>
         </div>
 
-        {/* Action Row: Queue/Lyrics Toggle, Heart Favorite, Add/Sleep Timer */}
         <div className="flex items-center justify-between px-2 pt-1">
-          {/* Mode Toggle: Turntable vs Synced Lyrics */}
           <button
             onClick={() => setViewMode(viewMode === 'turntable' ? 'lyrics' : 'turntable')}
             className={`p-2 rounded-full transition-colors ${
@@ -244,7 +250,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             {viewMode === 'turntable' ? <Mic2 className="w-5 h-5" /> : <Disc className="w-5 h-5" />}
           </button>
 
-          {/* Favorite Heart Button */}
           <button
             onClick={onToggleFavorite}
             className={`p-2 rounded-full transition-transform active:scale-90 ${
@@ -255,7 +260,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             <Heart className={`w-6 h-6 ${currentTrack.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
           </button>
 
-          {/* Sleep Timer / Add Action Shortcut */}
           <button
             onClick={onOpenSleepTimer}
             className={`p-2 rounded-full transition-colors relative ${
@@ -270,7 +274,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
           </button>
         </div>
 
-        {/* Seekbar: WaveformSeekBar or Samsung One UI Clean Track with Drag Decoupling */}
         {settings.seekBarStyle && settings.seekBarStyle !== 'classic' ? (
           <div className="pt-1">
             <WaveformSeekBar
@@ -278,6 +281,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
               duration={safeDuration}
               onSeek={onSeek}
               waveform={currentTrack.waveform}
+              seedKey={currentTrack.id}
               style={settings.seekBarStyle}
             />
           </div>
@@ -309,7 +313,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
                   isDraggingSeekRef.current = false;
                   setSeekDragTime(null);
                 }}
-                className="w-full h-1 bg-white/20 rounded-full appearance-none accent-amber-500 cursor-pointer group-hover:h-1.5 transition-all touch-none"
+                className="w-full h-1 bg-white/20 rounded-full appearance-none accent-amber-500 cursor-pointer touch-none"
               />
             </div>
 
@@ -320,9 +324,7 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
           </div>
         )}
 
-        {/* Primary Playback Controls: Shuffle, Previous, Hero Play/Pause, Next, Repeat */}
         <div className="flex items-center justify-between px-1 pt-1">
-          {/* Shuffle Button */}
           <button
             onClick={onToggleShuffle}
             className={`p-2 rounded-full transition-colors ${
@@ -333,7 +335,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             <Shuffle className="w-5 h-5" />
           </button>
 
-          {/* Previous Track */}
           <button
             onClick={onPrevious}
             className="p-3 rounded-full text-white hover:bg-white/10 transition-transform active:scale-90"
@@ -342,10 +343,9 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             <SkipBack className="w-7 h-7 fill-current" />
           </button>
 
-          {/* Hero Play / Pause Button */}
           <button
             onClick={onTogglePlay}
-            className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-2xl"
+            className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center transition-transform active:scale-95 shadow-2xl"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
@@ -355,7 +355,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             )}
           </button>
 
-          {/* Next Track */}
           <button
             onClick={onNext}
             className="p-3 rounded-full text-white hover:bg-white/10 transition-transform active:scale-90"
@@ -364,7 +363,6 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
             <SkipForward className="w-7 h-7 fill-current" />
           </button>
 
-          {/* Repeat Mode */}
           <button
             onClick={onCycleRepeat}
             className={`p-2 rounded-full transition-colors ${
@@ -378,4 +376,4 @@ export const NowPlayingView: React.FC<NowPlayingViewProps> = ({
       </div>
     </div>
   );
-};
+});

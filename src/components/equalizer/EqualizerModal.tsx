@@ -70,7 +70,7 @@ export const EqualizerModal: React.FC<EqualizerModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
       <div
         className="w-full max-w-2xl rounded-3xl bg-[#141419] border border-white/10 shadow-2xl p-6 flex flex-col gap-6 text-neutral-200 overflow-hidden max-h-[90vh] overflow-y-auto"
         style={{

@@ -1,15 +1,26 @@
 package com.isai.player
 
+import android.Manifest
 import android.app.Activity
+import android.app.RecoverableSecurityException
+import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.AudioManager
-import android.net.Uri
-import android.os.Bundle
 import android.media.MediaMetadataRetriever
-import androidx.documentfile.provider.DocumentFile
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.util.LruCache
+import android.util.Size
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -23,27 +34,33 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
+import com.isai.player.data.db.dao.TrackDao
+import com.isai.player.data.db.entity.TrackEntity
 import com.isai.player.data.model.Track
+import com.isai.player.data.model.toEntity
 import com.isai.player.data.scanner.DiscoveredFile
 import com.isai.player.data.scanner.MetadataExtractor
 import com.isai.player.playback.PlayerController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import android.content.ContentUris
-import android.os.Build
-import android.provider.MediaStore
-import android.util.Size
-import com.isai.player.data.db.dao.TrackDao
-import com.isai.player.data.model.toEntity
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -51,6 +68,8 @@ import java.io.FileInputStream
 import java.net.URLDecoder
 import java.net.URLEncoder
 import javax.inject.Inject
+import kotlin.math.abs
+import kotlin.math.max
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -65,17 +84,58 @@ class MainActivity : ComponentActivity() {
     lateinit var trackDao: TrackDao
 
     private var webView: WebView? = null
+    private var isPageLoaded: Boolean = false
+    private val pendingJsScripts = mutableListOf<String>()
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingMediaStoreScan: Boolean = false
+    private var pendingDeleteTrackId: String? = null
+    private var pendingDeleteTrackUri: String? = null
+
+    // 12 MB fast RAM cache for decoded album art thumbnails to guarantee 60fps scrolling
+    private val artMemoryCache = object : LruCache<String, ByteArray>(12 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray): Int = value.size
+    }
 
     // Permission launcher for Media & Notifications
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions.entries.any { it.value }
-        if (granted) {
+        val audioPerm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        val grantedAudio = permissions[audioPerm] == true || hasAudioPermission()
+        if (pendingMediaStoreScan && grantedAudio) {
+            pendingMediaStoreScan = false
             lifecycleScope.launch(Dispatchers.IO) {
                 scanMediaStoreAudioInternal()
             }
+        } else {
+            pendingMediaStoreScan = false
+        }
+    }
+
+    // System MediaStore Permanent Delete Confirmation Launcher (Android 10/11+)
+    private val deleteMediaLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val id = pendingDeleteTrackId
+        val uriStr = pendingDeleteTrackUri
+        pendingDeleteTrackId = null
+        pendingDeleteTrackUri = null
+
+        if (id != null) {
+            val deleted = result.resultCode == Activity.RESULT_OK
+            if (deleted && uriStr != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    removeTrackFromDb(id, uriStr)
+                }
+            }
+            val escapedId = JSONObject.quote(id)
+            dispatchJsToWebView(
+                "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, $deleted);"
+            )
         }
     }
 
@@ -111,7 +171,14 @@ class MainActivity : ComponentActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             } catch (_: Exception) {}
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
 
+            notifyScanProgress(true, "Scanning selected folder...")
             lifecycleScope.launch(Dispatchers.IO) {
                 scanAndImportFolder(treeUri)
             }
@@ -136,6 +203,7 @@ class MainActivity : ComponentActivity() {
                         contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     } catch (_: Exception) {}
                 }
+                notifyScanProgress(true, "Importing selected tracks...")
                 lifecycleScope.launch(Dispatchers.IO) {
                     processSelectedUris(uris)
                 }
@@ -149,18 +217,20 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         volumeControlStream = AudioManager.STREAM_MUSIC
-        window.decorView.setBackgroundColor(Color.parseColor("#121212"))
+        window.decorView.setBackgroundColor(Color.parseColor("#000000"))
 
         val isaiWebView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.parseColor("#121212"))
+            setBackgroundColor(Color.parseColor("#000000"))
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            overScrollMode = View.OVER_SCROLL_NEVER
         }
         webView = isaiWebView
 
-        // Apply Window Insets so UI is padded smoothly below phone status bar, clock, notch & network icons
+        // Apply Window Insets so UI sits cleanly below status bar / camera cutout
         ViewCompat.setOnApplyWindowInsetsListener(isaiWebView) { view, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.statusBars())
             view.setPadding(0, insets.top, 0, 0)
@@ -173,6 +243,77 @@ class MainActivity : ComponentActivity() {
 
         setContentView(isaiWebView)
         isaiWebView.loadUrl("https://isai.local/index.html")
+
+        // Prompt for audio & notification permissions once on first launch
+        val prefs = getSharedPreferences("isai_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("asked_initial_perms_v1", false)) {
+            prefs.edit().putBoolean("asked_initial_perms_v1", true).apply()
+            if (!hasAudioPermission() || !hasNotificationPermission()) {
+                requestStorageAndNotificationPermissions()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView?.onResume()
+        flushPendingJs()
+    }
+
+    private fun hasAudioPermission(): Boolean {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        return ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    private fun dispatchJsToWebView(script: String) {
+        runOnUiThread {
+            val wv = webView
+            if (wv != null && isPageLoaded) {
+                wv.evaluateJavascript(script, null)
+            } else {
+                synchronized(pendingJsScripts) {
+                    pendingJsScripts.add(script)
+                }
+            }
+        }
+    }
+
+    private fun flushPendingJs() {
+        runOnUiThread {
+            val wv = webView ?: return@runOnUiThread
+            if (!isPageLoaded) return@runOnUiThread
+            val copy: List<String>
+            synchronized(pendingJsScripts) {
+                if (pendingJsScripts.isEmpty()) return@runOnUiThread
+                copy = pendingJsScripts.toList()
+                pendingJsScripts.clear()
+            }
+            for (script in copy) {
+                wv.evaluateJavascript(script, null)
+            }
+        }
+    }
+
+    private fun notifyScanProgress(scanning: Boolean, message: String = "") {
+        val escapedMsg = JSONObject.quote(message)
+        dispatchJsToWebView(
+            "window.__isaiOnScanProgress && window.__isaiOnScanProgress($scanning, $escapedMsg);"
+        )
     }
 
     private fun observePlayerState(wv: WebView) {
@@ -181,11 +322,13 @@ class MainActivity : ComponentActivity() {
                 val isPlaying = state.isPlaying
                 val currentPos = state.currentPositionMs
                 val dur = state.durationMs
-                wv.evaluateJavascript(
-                    "window.__isaiOnTimeUpdate && window.__isaiOnTimeUpdate($currentPos, $dur); " +
-                    "window.__isaiOnStateChange && window.__isaiOnStateChange($isPlaying);",
-                    null
-                )
+                if (isPageLoaded) {
+                    wv.evaluateJavascript(
+                        "window.__isaiOnTimeUpdate && window.__isaiOnTimeUpdate($currentPos, $dur); " +
+                        "window.__isaiOnStateChange && window.__isaiOnStateChange($isPlaying);",
+                        null
+                    )
+                }
             }
         }
     }
@@ -245,59 +388,67 @@ class MainActivity : ComponentActivity() {
                 val url = request?.url ?: return null
                 val host = url.host
 
-                // 1. Handle Cached Artwork Serving: https://isai.local/artwork?id=...
+                // 1. Handle Artwork Serving with RAM + Disk + On-Demand Cache
                 if ((host == "isai.local" || host == "localhost") && url.path == "/artwork") {
                     val id = url.getQueryParameter("id")
                     if (!id.isNullOrBlank()) {
                         val cleanId = id.removePrefix("media-").removePrefix("tree-").removePrefix("file-")
+                        val headers = mapOf(
+                            "Access-Control-Allow-Origin" to "*",
+                            "Cache-Control" to "public, max-age=604800"
+                        )
+
+                        // A. In-memory LRU hit (< 0.1ms)
+                        artMemoryCache.get(cleanId)?.let { cachedBytes ->
+                            return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(cachedBytes))
+                        }
+
+                        // B. Disk cache hit
                         val artFile = File(cacheDir, "art/$cleanId.jpg")
                         if (artFile.exists() && artFile.length() > 0) {
                             try {
-                                val headers = mapOf(
-                                    "Access-Control-Allow-Origin" to "*",
-                                    "Cache-Control" to "public, max-age=86400"
-                                )
-                                return WebResourceResponse("image/jpeg", null, 200, "OK", headers, FileInputStream(artFile))
+                                val bytes = artFile.readBytes()
+                                artMemoryCache.put(cleanId, bytes)
+                                return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(bytes))
                             } catch (_: Exception) {}
                         }
 
-                        // Try extracting directly from URI on demand
+                        // C. On-demand extraction from audio URI
                         val uriParam = url.getQueryParameter("uri")
                         if (!uriParam.isNullOrBlank()) {
+                            val retriever = MediaMetadataRetriever()
                             try {
                                 val parsedUri = Uri.parse(uriParam)
-                                val retriever = MediaMetadataRetriever()
-                                val pfd = contentResolver.openFileDescriptor(parsedUri, "r")
-                                if (pfd != null) {
-                                    pfd.use { fd ->
-                                        retriever.setDataSource(fd.fileDescriptor)
-                                        val picBytes = retriever.embeddedPicture
-                                        if (picBytes != null && picBytes.isNotEmpty()) {
-                                            try {
-                                                val artDir = File(cacheDir, "art")
-                                                artDir.mkdirs()
-                                                File(artDir, "$cleanId.jpg").writeBytes(picBytes)
-                                            } catch (_: Exception) {}
-
-                                            val headers = mapOf(
-                                                "Access-Control-Allow-Origin" to "*",
-                                                "Cache-Control" to "public, max-age=86400"
-                                            )
-                                            return WebResourceResponse(
-                                                "image/jpeg",
-                                                null,
-                                                200,
-                                                "OK",
-                                                headers,
-                                                ByteArrayInputStream(picBytes)
-                                            )
-                                        }
+                                contentResolver.openFileDescriptor(parsedUri, "r")?.use { fd ->
+                                    retriever.setDataSource(fd.fileDescriptor)
+                                    val picBytes = retriever.embeddedPicture
+                                    if (picBytes != null && picBytes.isNotEmpty()) {
+                                        val downsampled = downsampleArtToJpeg(picBytes)
+                                        artMemoryCache.put(cleanId, downsampled)
+                                        try {
+                                            val artDir = File(cacheDir, "art")
+                                            artDir.mkdirs()
+                                            File(artDir, "$cleanId.jpg").writeBytes(downsampled)
+                                        } catch (_: Exception) {}
+                                        return WebResourceResponse(
+                                            "image/jpeg",
+                                            null,
+                                            200,
+                                            "OK",
+                                            headers,
+                                            ByteArrayInputStream(downsampled)
+                                        )
                                     }
                                 }
-                            } catch (_: Exception) {}
+                            } catch (_: Exception) {
+                            } finally {
+                                try {
+                                    retriever.release()
+                                } catch (_: Exception) {}
+                            }
                         }
 
-                        // Try loading MediaStore thumbnail if on Android 10+ (API 29+)
+                        // D. MediaStore thumbnail on Android 10+ (API 29+)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && id.startsWith("media-")) {
                             val trackId = cleanId.toLongOrNull()
                             if (trackId != null) {
@@ -305,33 +456,39 @@ class MainActivity : ComponentActivity() {
                                     val trackUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId)
                                     val bitmap = contentResolver.loadThumbnail(trackUri, Size(512, 512), null)
                                     val baos = ByteArrayOutputStream()
-                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, baos)
-                                    val headers = mapOf(
-                                        "Access-Control-Allow-Origin" to "*",
-                                        "Cache-Control" to "public, max-age=86400"
-                                    )
-                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(baos.toByteArray()))
+                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+                                    bitmap.recycle()
+                                    val bytes = baos.toByteArray()
+                                    artMemoryCache.put(cleanId, bytes)
+                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(bytes))
                                 } catch (_: Exception) {}
                             }
                         }
 
-                        // Try loading album art URI
+                        // E. Legacy album art URI
                         val albumId = url.getQueryParameter("albumId")?.toLongOrNull()
                         if (albumId != null && albumId >= 0) {
                             try {
                                 val sArtworkUri = Uri.parse("content://media/external/audio/albumart")
                                 val albumArtUri = ContentUris.withAppendedId(sArtworkUri, albumId)
-                                val inputStream = contentResolver.openInputStream(albumArtUri)
-                                if (inputStream != null) {
-                                    val headers = mapOf(
-                                        "Access-Control-Allow-Origin" to "*",
-                                        "Cache-Control" to "public, max-age=86400"
-                                    )
-                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, inputStream)
+                                contentResolver.openInputStream(albumArtUri)?.use { input ->
+                                    val bytes = downsampleArtToJpeg(input.readBytes())
+                                    artMemoryCache.put(cleanId, bytes)
+                                    return WebResourceResponse("image/jpeg", null, 200, "OK", headers, ByteArrayInputStream(bytes))
                                 }
                             } catch (_: Exception) {}
                         }
                     }
+
+                    // Return clean 404 immediately instead of falling back to SPA index.html
+                    return WebResourceResponse(
+                        "text/plain",
+                        "UTF-8",
+                        404,
+                        "Not Found",
+                        mapOf("Access-Control-Allow-Origin" to "*"),
+                        ByteArrayInputStream(ByteArray(0))
+                    )
                 }
 
                 // 2. Handle Audio Streaming with HTTP 206 Partial Content Range Requests
@@ -412,8 +569,37 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                view?.setBackgroundColor(Color.parseColor("#121212"))
+                view?.setBackgroundColor(Color.parseColor("#000000"))
+                isPageLoaded = true
+                flushPendingJs()
             }
+        }
+    }
+
+    private fun downsampleArtToJpeg(rawBytes: ByteArray, targetDim: Int = 512): ByteArray {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+            val maxDim = max(bounds.outWidth, bounds.outHeight)
+            if (maxDim <= 0) return rawBytes
+            if (maxDim <= targetDim && rawBytes.size <= 160 * 1024) return rawBytes
+
+            var sampleSize = 1
+            while ((maxDim / (sampleSize * 2)) >= targetDim) {
+                sampleSize *= 2
+            }
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val bitmap = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
+                ?: return rawBytes
+            val baos = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+            bitmap.recycle()
+            baos.toByteArray()
+        } catch (_: Exception) {
+            rawBytes
         }
     }
 
@@ -470,6 +656,14 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun scanAllDeviceAudio() {
+            if (!hasAudioPermission()) {
+                pendingMediaStoreScan = true
+                runOnUiThread {
+                    requestStorageAndNotificationPermissions()
+                }
+                return
+            }
+            notifyScanProgress(true, "Scanning device music library...")
             lifecycleScope.launch(Dispatchers.IO) {
                 scanMediaStoreAudioInternal()
             }
@@ -479,6 +673,20 @@ class MainActivity : ComponentActivity() {
         fun requestPermissions() {
             runOnUiThread {
                 requestStorageAndNotificationPermissions()
+            }
+        }
+
+        @JavascriptInterface
+        fun removeTrackFromApp(id: String, uriString: String) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                removeTrackFromDb(id, uriString)
+            }
+        }
+
+        @JavascriptInterface
+        fun deleteTrackFromDevice(id: String, uriString: String) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                deleteTrackPermanently(id, uriString)
             }
         }
 
@@ -493,11 +701,7 @@ class MainActivity : ComponentActivity() {
             durationMs: Long,
             positionMs: Long
         ) {
-            val trackId = try {
-                id.removePrefix("tree-").removePrefix("file-").removePrefix("media-").toLong()
-            } catch (_: Exception) {
-                id.hashCode().toLong()
-            }
+            val trackId = parseTrackId(id)
 
             val track = Track(
                 id = trackId,
@@ -569,13 +773,6 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun setVolume(vol: Float) {
-            runOnUiThread {
-                playerController.setVolume(vol)
-            }
-        }
-
-        @JavascriptInterface
         fun skipNext() {
             runOnUiThread {
                 playerController.skipToNext()
@@ -590,11 +787,165 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun parseTrackId(id: String): Long {
+        return try {
+            id.removePrefix("tree-").removePrefix("file-").removePrefix("media-").toLong()
+        } catch (_: Exception) {
+            id.hashCode().toLong()
+        }
+    }
+
+    private suspend fun removeTrackFromDb(id: String, uriString: String) {
+        try {
+            trackDao.deleteTrackByIdOrUri(parseTrackId(id), uriString)
+        } catch (e: Exception) {
+            android.util.Log.w("IsaiAndroid", "Failed to remove track from DB: ${e.message}")
+        }
+    }
+
+    private suspend fun deleteTrackPermanently(id: String, uriString: String) {
+        val escapedId = JSONObject.quote(id)
+        try {
+            val uri = Uri.parse(uriString)
+
+            // 1. Try deleting directly if it's a writable SAF document URI
+            if (uri.scheme == "content" && DocumentsContract.isDocumentUri(this, uri)) {
+                try {
+                    if (DocumentsContract.deleteDocument(contentResolver, uri)) {
+                        removeTrackFromDb(id, uriString)
+                        dispatchJsToWebView(
+                            "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, true);"
+                        )
+                        return
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 2. Resolve MediaStore URI for system deletion
+            val mediaUri = resolveMediaStoreUri(uri)
+            if (mediaUri == null) {
+                dispatchJsToWebView(
+                    "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, false, \"Could not locate track in device MediaStore.\");"
+                )
+                return
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val pendingIntent = MediaStore.createDeleteRequest(contentResolver, listOf(mediaUri))
+                withContext(Dispatchers.Main) {
+                    pendingDeleteTrackId = id
+                    pendingDeleteTrackUri = uriString
+                    deleteMediaLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+                }
+            } else {
+                try {
+                    val rows = contentResolver.delete(mediaUri, null, null)
+                    if (rows > 0) {
+                        removeTrackFromDb(id, uriString)
+                        dispatchJsToWebView(
+                            "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, true);"
+                        )
+                    } else {
+                        dispatchJsToWebView(
+                            "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, false);"
+                        )
+                    }
+                } catch (e: SecurityException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && e is RecoverableSecurityException) {
+                        withContext(Dispatchers.Main) {
+                            pendingDeleteTrackId = id
+                            pendingDeleteTrackUri = uriString
+                            deleteMediaLauncher.launch(
+                                IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build()
+                            )
+                        }
+                    } else {
+                        dispatchJsToWebView(
+                            "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, false);"
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("IsaiAndroid", "Permanent delete failed: ${e.message}", e)
+            dispatchJsToWebView(
+                "window.__isaiOnTrackDeleted && window.__isaiOnTrackDeleted($escapedId, false);"
+            )
+        }
+    }
+
+    private fun resolveMediaStoreUri(uri: Uri): Uri? {
+        if (uri.toString().startsWith("content://media/")) {
+            return uri
+        }
+        var displayName: String? = null
+        var size: Long = -1L
+        try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
+                    if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (displayName.isNullOrBlank()) return null
+
+        return try {
+            val selection = "${MediaStore.Audio.Media.DISPLAY_NAME} = ?"
+            val args = arrayOf(displayName)
+            contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.SIZE),
+                selection,
+                args,
+                null
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                val sizeIdx = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                var fallbackId: Long? = null
+                while (cursor.moveToNext()) {
+                    val rowId = cursor.getLong(idIdx)
+                    if (fallbackId == null) fallbackId = rowId
+                    if (size > 0 && sizeIdx >= 0 && cursor.getLong(sizeIdx) == size) {
+                        return ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, rowId)
+                    }
+                }
+                fallbackId?.let {
+                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, it)
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // Backend Fingerprint Key to automatically omit duplicate tracks across folders/MediaStore
+    private fun buildTrackFingerprint(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        sizeBytes: Long
+    ): String {
+        val normTitle = title.trim().lowercase().replace(Regex("\\s+"), " ")
+        val normArtist = artist.trim().lowercase().replace(Regex("\\s+"), " ")
+        val durBucket = if (durationMs > 0L) durationMs / 3000L else if (sizeBytes > 0L) -(sizeBytes / 4096L) else 0L
+        return "$normTitle|$normArtist|$durBucket"
+    }
+
     // Scan SAF Document Tree after user taps "USE THIS FOLDER"
     private suspend fun scanAndImportFolder(treeUri: Uri) {
         val tracks = JSONArray()
         var folderName = "Music Folder"
-        val folderId = "folder-" + Math.abs(treeUri.toString().hashCode())
+        val folderId = "folder-" + abs(treeUri.toString().hashCode())
 
         try {
             val rootDocId = if (DocumentsContract.isDocumentUri(this, treeUri)) {
@@ -603,27 +954,32 @@ class MainActivity : ComponentActivity() {
                 DocumentsContract.getTreeDocumentId(treeUri)
             }
 
-            val docFile = DocumentFile.fromTreeUri(this, treeUri)
-            val docFileName = docFile?.name
+            val docFileName = try {
+                DocumentFile.fromTreeUri(this, treeUri)?.name
+            } catch (_: Exception) {
+                null
+            }
             if (!docFileName.isNullOrBlank()) {
                 folderName = docFileName
             } else {
                 val treeDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocId)
-                contentResolver.query(
-                    treeDocUri,
-                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                        if (nameIndex >= 0) {
-                            val name = cursor.getString(nameIndex)
-                            if (!name.isNullOrBlank()) folderName = name
+                try {
+                    contentResolver.query(
+                        treeDocUri,
+                        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                            if (nameIndex >= 0) {
+                                val name = cursor.getString(nameIndex)
+                                if (!name.isNullOrBlank()) folderName = name
+                            }
                         }
                     }
-                }
+                } catch (_: Exception) {}
             }
 
             if (folderName == "Music Folder" && rootDocId.isNotBlank()) {
@@ -633,196 +989,245 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            scanDirectoryDocuments(treeUri, rootDocId, folderName, tracks, maxDepth = 2, currentDepth = 0)
+            // 1. Collect all audio files rapidly (up to depth 6, resilient per-subfolder)
+            val discovered = mutableListOf<DiscoveredFile>()
+            val seenUris = HashSet<String>()
+            collectSafAudioFiles(treeUri, rootDocId, folderName, discovered, seenUris, maxDepth = 6, currentDepth = 0)
+
+            // 2. Parallel metadata extraction (no blocking bitmap encoding during scan)
+            val semaphore = Semaphore(6)
+            val extractedList = coroutineScope {
+                discovered.map { file ->
+                    async(Dispatchers.IO) {
+                        semaphore.withPermit {
+                            try {
+                                file to metadataExtractor.extractTrack(file, extractArtworkToDisk = false)
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+
+            // 3. Backend silent deduplication & batch DB insert
+            val seenFingerprints = HashSet<String>()
+            val entitiesToInsert = mutableListOf<TrackEntity>()
+
+            for ((file, trackEntity) in extractedList) {
+                val title = if (trackEntity.title.isNotBlank()) trackEntity.title else file.displayName
+                val artist = if (trackEntity.artist.isNotBlank()) trackEntity.artist else "Unknown Artist"
+                val album = if (trackEntity.album.isNotBlank()) trackEntity.album else folderName
+                val dur = if (trackEntity.durationMs > 0L) trackEntity.durationMs else 180000L
+
+                val fingerprint = buildTrackFingerprint(title, artist, dur, file.sizeBytes)
+                if (!seenFingerprints.add(fingerprint)) {
+                    continue // Omit duplicate track automatically in backend
+                }
+
+                entitiesToInsert.add(trackEntity)
+                val encodedDocUri = URLEncoder.encode(file.uriString, "UTF-8")
+                val streamUrl = "https://isai.local/content_stream?uri=$encodedDocUri"
+                val artUrl = "https://isai.local/artwork?id=${trackEntity.id}&uri=$encodedDocUri"
+
+                val trk = JSONObject().apply {
+                    put("id", "tree-" + file.documentId.hashCode().toString())
+                    put("uri", file.uriString)
+                    put("streamUrl", streamUrl)
+                    put("title", title)
+                    put("artist", artist)
+                    put("album", album)
+                    put("artPath", artUrl)
+                    put("folderPath", "$folderName/${file.displayName}")
+                    put("mimeType", if (file.mimeType.isNotBlank()) file.mimeType else "audio/mpeg")
+                    put("sizeBytes", file.sizeBytes)
+                    put("durationMs", dur)
+                }
+                tracks.put(trk)
+            }
+
+            if (entitiesToInsert.isNotEmpty()) {
+                try {
+                    trackDao.insertTracks(entitiesToInsert)
+                } catch (_: Exception) {}
+            }
         } catch (e: Exception) {
             android.util.Log.e("IsaiAndroid", "Error scanning folder: ${e.message}", e)
+        } finally {
+            notifyScanProgress(false, "")
         }
 
-        runOnUiThread {
-            val escapedName = JSONObject.quote(folderName)
-            val escapedId = JSONObject.quote(folderId)
-            webView?.evaluateJavascript(
-                "window.__isaiOnFolderImported && window.__isaiOnFolderImported($escapedName, $tracks, $escapedId);",
-                null
+        val escapedName = JSONObject.quote(folderName)
+        val escapedId = JSONObject.quote(folderId)
+        if (tracks.length() == 0) {
+            dispatchJsToWebView(
+                "window.__isaiOnScanEmpty && window.__isaiOnScanEmpty($escapedName);"
+            )
+        } else {
+            val escapedTracksJson = JSONObject.quote(tracks.toString())
+            dispatchJsToWebView(
+                "window.__isaiOnFolderImported && window.__isaiOnFolderImported($escapedName, JSON.parse($escapedTracksJson), $escapedId);"
             )
         }
     }
 
-    private suspend fun scanDirectoryDocuments(
+    private fun collectSafAudioFiles(
         treeUri: Uri,
         parentDocId: String,
         folderName: String,
-        results: JSONArray,
+        outFiles: MutableList<DiscoveredFile>,
+        seenUris: MutableSet<String>,
         maxDepth: Int,
         currentDepth: Int
     ) {
-        if (currentDepth > maxDepth || results.length() >= 500) return
+        if (currentDepth > maxDepth || outFiles.size >= 800) return
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
 
-        contentResolver.query(
-            childrenUri,
-            arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,
-                DocumentsContract.Document.COLUMN_SIZE
-            ),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-            val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-            val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-            val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+        try {
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
 
-            while (cursor.moveToNext()) {
-                val docId = if (idIdx >= 0) cursor.getString(idIdx) else null ?: continue
-                val displayName = if (nameIdx >= 0) cursor.getString(nameIdx) else "Audio Track"
-                val mimeType = if (mimeIdx >= 0) cursor.getString(mimeIdx) else ""
-                val size = if (sizeIdx >= 0) cursor.getLong(sizeIdx) else 0L
-
-                if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
-                    scanDirectoryDocuments(treeUri, docId, folderName, results, maxDepth, currentDepth + 1)
-                } else if (isAudioFile(displayName, mimeType)) {
-                    val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-                    val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(docUri.toString(), "UTF-8")
-
-                    // Extract actual ID3 tags: Title, Artist, Album, Duration & Embedded Artwork
-                    val discoveredFile = DiscoveredFile(
-                        uriString = docUri.toString(),
-                        documentId = docId,
-                        displayName = displayName,
-                        mimeType = mimeType,
-                        sizeBytes = size,
-                        lastModified = System.currentTimeMillis(),
-                        folderPath = folderName
-                    )
-
-                    var extractedTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
-                    var extractedArtist = "Unknown Artist"
-                    var extractedAlbum = folderName
-                    var durationMs = 180000L
-                    var artUrl: String? = null
-
+                while (cursor.moveToNext() && outFiles.size < 800) {
                     try {
-                        val trackEntity = metadataExtractor.extractTrack(discoveredFile)
-                        if (trackEntity.title.isNotBlank()) extractedTitle = trackEntity.title
-                        if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
-                        if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
-                        if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
-                        val trackId = trackEntity.id.toString()
-                        val encodedDocUri = URLEncoder.encode(docUri.toString(), "UTF-8")
-                        artUrl = "https://isai.local/artwork?id=$trackId&uri=$encodedDocUri"
-                        try {
-                            trackDao.insertTrack(trackEntity)
-                        } catch (_: Exception) {}
-                    } catch (e: Exception) {
-                        android.util.Log.w("IsaiMetadata", "Error reading metadata: ${e.message}")
-                    }
+                        val docId = if (idIdx >= 0) cursor.getString(idIdx) else null
+                        if (docId.isNullOrBlank()) continue
+                        val displayName = if (nameIdx >= 0) cursor.getString(nameIdx) ?: "Audio Track" else "Audio Track"
+                        val mimeType = if (mimeIdx >= 0) cursor.getString(mimeIdx) ?: "" else ""
+                        val size = if (sizeIdx >= 0) cursor.getLong(sizeIdx) else 0L
 
-                    if (artUrl == null) {
-                        val fallbackId = Math.abs(docId.hashCode()).toString()
-                        val encodedDocUri = URLEncoder.encode(docUri.toString(), "UTF-8")
-                        artUrl = "https://isai.local/artwork?id=$fallbackId&uri=$encodedDocUri"
-                    }
+                        if (displayName.startsWith(".")) continue // skip hidden trash/temp folders & files
 
-                    val trk = JSONObject().apply {
-                        put("id", "tree-" + docId.hashCode().toString())
-                        put("uri", docUri.toString())
-                        put("streamUrl", streamUrl)
-                        put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
-                        put("artist", extractedArtist)
-                        put("album", extractedAlbum)
-                        put("artPath", artUrl)
-                        put("folderPath", "$folderName/$displayName")
-                        put("mimeType", if (mimeType.isNotBlank()) mimeType else "audio/mpeg")
-                        put("sizeBytes", size)
-                        put("durationMs", durationMs)
-                    }
-                    results.put(trk)
+                        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            collectSafAudioFiles(treeUri, docId, folderName, outFiles, seenUris, maxDepth, currentDepth + 1)
+                        } else if (isAudioFile(displayName, mimeType)) {
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                            val uriStr = docUri.toString()
+                            if (seenUris.add(uriStr)) {
+                                outFiles.add(
+                                    DiscoveredFile(
+                                        uriString = uriStr,
+                                        documentId = docId,
+                                        displayName = displayName,
+                                        mimeType = mimeType,
+                                        sizeBytes = size,
+                                        lastModified = System.currentTimeMillis(),
+                                        folderPath = folderName
+                                    )
+                                )
+                            }
+                        }
+                    } catch (_: Exception) {}
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.w("IsaiAndroid", "Skipping unreadable SAF directory $parentDocId: ${e.message}")
         }
     }
 
     private suspend fun processSelectedUris(uris: List<Uri>) {
         val results = JSONArray()
-        for (uri in uris) {
-            try {
-                var displayName = "Track"
-                var size = 0L
-                val mimeType = contentResolver.getType(uri) ?: "audio/mpeg"
+        val seenFingerprints = HashSet<String>()
+        val entitiesToInsert = mutableListOf<TrackEntity>()
 
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                        if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
-                        if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
-                    }
-                }
-
-                val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(uri.toString(), "UTF-8")
-                val discoveredFile = DiscoveredFile(
-                    uriString = uri.toString(),
-                    documentId = uri.toString().hashCode().toString(),
-                    displayName = displayName,
-                    mimeType = mimeType,
-                    sizeBytes = size,
-                    lastModified = System.currentTimeMillis(),
-                    folderPath = "Imported Tracks"
-                )
-
-                var extractedTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
-                var extractedArtist = "Unknown Artist"
-                var extractedAlbum = "Imported Tracks"
-                var durationMs = 180000L
-                var artUrl: String? = null
-
+        try {
+            for (uri in uris) {
                 try {
-                    val trackEntity = metadataExtractor.extractTrack(discoveredFile)
-                    if (trackEntity.title.isNotBlank()) extractedTitle = trackEntity.title
-                    if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
-                    if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
-                    if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
-                    val trackId = trackEntity.id.toString()
+                    var displayName = "Track"
+                    var size = 0L
+                    val mimeType = contentResolver.getType(uri) ?: "audio/mpeg"
+
+                    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                            if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
+                            if (sizeIdx >= 0) size = cursor.getLong(sizeIdx)
+                        }
+                    }
+
                     val encodedUri = URLEncoder.encode(uri.toString(), "UTF-8")
-                    artUrl = "https://isai.local/artwork?id=$trackId&uri=$encodedUri"
+                    val streamUrl = "https://isai.local/content_stream?uri=$encodedUri"
+                    val discoveredFile = DiscoveredFile(
+                        uriString = uri.toString(),
+                        documentId = uri.toString().hashCode().toString(),
+                        displayName = displayName,
+                        mimeType = mimeType,
+                        sizeBytes = size,
+                        lastModified = System.currentTimeMillis(),
+                        folderPath = "Imported Tracks"
+                    )
+
+                    var extractedTitle = displayName.substringBeforeLast(".").replace(Regex("^[0-9\\s._-]+"), "")
+                    var extractedArtist = "Unknown Artist"
+                    var extractedAlbum = "Imported Tracks"
+                    var durationMs = 180000L
+                    var artUrl: String? = null
+
                     try {
-                        trackDao.insertTrack(trackEntity)
+                        val trackEntity = metadataExtractor.extractTrack(discoveredFile, extractArtworkToDisk = false)
+                        if (trackEntity.title.isNotBlank()) extractedTitle = trackEntity.title
+                        if (trackEntity.artist.isNotBlank()) extractedArtist = trackEntity.artist
+                        if (trackEntity.album.isNotBlank()) extractedAlbum = trackEntity.album
+                        if (trackEntity.durationMs > 0) durationMs = trackEntity.durationMs
+                        artUrl = "https://isai.local/artwork?id=${trackEntity.id}&uri=$encodedUri"
+                        entitiesToInsert.add(trackEntity)
                     } catch (_: Exception) {}
-                } catch (_: Exception) {}
 
-                if (artUrl == null) {
-                    val fallbackId = Math.abs(uri.toString().hashCode()).toString()
-                    val encodedUri = URLEncoder.encode(uri.toString(), "UTF-8")
-                    artUrl = "https://isai.local/artwork?id=$fallbackId&uri=$encodedUri"
-                }
+                    if (artUrl == null) {
+                        val fallbackId = abs(uri.toString().hashCode()).toString()
+                        artUrl = "https://isai.local/artwork?id=$fallbackId&uri=$encodedUri"
+                    }
 
-                val trk = JSONObject().apply {
-                    put("id", "file-" + uri.toString().hashCode().toString())
-                    put("uri", uri.toString())
-                    put("streamUrl", streamUrl)
-                    put("title", if (extractedTitle.isNotBlank()) extractedTitle else displayName)
-                    put("artist", extractedArtist)
-                    put("album", extractedAlbum)
-                    put("artPath", artUrl)
-                    put("folderPath", "Imported Tracks/$displayName")
-                    put("mimeType", mimeType)
-                    put("sizeBytes", size)
-                    put("durationMs", durationMs)
+                    val finalTitle = if (extractedTitle.isNotBlank()) extractedTitle else displayName
+                    val fingerprint = buildTrackFingerprint(finalTitle, extractedArtist, durationMs, size)
+                    if (!seenFingerprints.add(fingerprint)) continue
+
+                    val trk = JSONObject().apply {
+                        put("id", "file-" + uri.toString().hashCode().toString())
+                        put("uri", uri.toString())
+                        put("streamUrl", streamUrl)
+                        put("title", finalTitle)
+                        put("artist", extractedArtist)
+                        put("album", extractedAlbum)
+                        put("artPath", artUrl)
+                        put("folderPath", "Imported Tracks/$displayName")
+                        put("mimeType", mimeType)
+                        put("sizeBytes", size)
+                        put("durationMs", durationMs)
+                    }
+                    results.put(trk)
+                } catch (e: Exception) {
+                    android.util.Log.e("IsaiWeb", "Error reading URI: $uri", e)
                 }
-                results.put(trk)
-            } catch (e: Exception) {
-                android.util.Log.e("IsaiWeb", "Error reading URI: $uri", e)
             }
+
+            if (entitiesToInsert.isNotEmpty()) {
+                try {
+                    trackDao.insertTracks(entitiesToInsert)
+                } catch (_: Exception) {}
+            }
+        } finally {
+            notifyScanProgress(false, "")
         }
 
-        runOnUiThread {
-            webView?.evaluateJavascript(
-                "window.__isaiOnTracksImported && window.__isaiOnTracksImported($results);",
-                null
+        if (results.length() > 0) {
+            val escapedTracksJson = JSONObject.quote(results.toString())
+            dispatchJsToWebView(
+                "window.__isaiOnTracksImported && window.__isaiOnTracksImported(JSON.parse($escapedTracksJson));"
             )
         }
     }
@@ -859,10 +1264,10 @@ class MainActivity : ComponentActivity() {
     fun requestStorageAndNotificationPermissions() {
         val permissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(android.Manifest.permission.READ_MEDIA_AUDIO)
-            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+            permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            permissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         permissionLauncher.launch(permissions.toTypedArray())
     }
@@ -881,15 +1286,23 @@ class MainActivity : ComponentActivity() {
             MediaStore.Audio.Media.ALBUM_ID
         )
 
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 15000"
+        val selectionBuilder = StringBuilder("(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} > 15000)")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            selectionBuilder.append(" AND ${MediaStore.Audio.Media.IS_PENDING} = 0")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            selectionBuilder.append(" AND ${MediaStore.Audio.Media.IS_TRASHED} = 0")
+        }
+
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
-        val entitiesToInsert = mutableListOf<com.isai.player.data.db.entity.TrackEntity>()
+        val entitiesToInsert = mutableListOf<TrackEntity>()
+        val seenFingerprints = HashSet<String>()
 
         try {
             contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                selection,
+                selectionBuilder.toString(),
                 null,
                 sortOrder
             )?.use { cursor ->
@@ -905,18 +1318,28 @@ class MainActivity : ComponentActivity() {
 
                 while (cursor.moveToNext() && tracks.length() < 1000) {
                     val id = cursor.getLong(idCol)
-                    val title = cursor.getString(titleCol) ?: "Track $id"
-                    val artist = cursor.getString(artistCol) ?: "Unknown Artist"
-                    val album = cursor.getString(albumCol) ?: "Downloads & Storage"
+                    val title = cursor.getString(titleCol)?.trim() ?: "Track $id"
+                    val artist = cursor.getString(artistCol)?.trim() ?: "Unknown Artist"
+                    val album = cursor.getString(albumCol)?.trim() ?: "Downloads & Storage"
                     val durationMs = cursor.getLong(durationCol).coerceAtLeast(0L)
                     val dataPath = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
                     val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "audio/mpeg" else "audio/mpeg"
                     val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
                     val albumId = if (albumIdCol >= 0) cursor.getLong(albumIdCol) else -1L
 
+                    if (size <= 0L) continue
+                    if (dataPath.isNotBlank() && !File(dataPath).exists()) continue
+
+                    val resolvedDuration = if (durationMs > 0) durationMs else 180000L
+                    val fingerprint = buildTrackFingerprint(title, artist, resolvedDuration, size)
+                    if (!seenFingerprints.add(fingerprint)) {
+                        continue // Omit duplicate track automatically in backend
+                    }
+
                     val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                    val streamUrl = "https://isai.local/content_stream?uri=" + URLEncoder.encode(contentUri.toString(), "UTF-8")
-                    val artUrl = "https://isai.local/artwork?id=media-$id&albumId=$albumId"
+                    val encodedUri = URLEncoder.encode(contentUri.toString(), "UTF-8")
+                    val streamUrl = "https://isai.local/content_stream?uri=$encodedUri"
+                    val artUrl = "https://isai.local/artwork?id=media-$id&albumId=$albumId&uri=$encodedUri"
 
                     val folderName = if (dataPath.isNotBlank() && dataPath.contains('/')) {
                         dataPath.substringBeforeLast('/').substringAfterLast('/')
@@ -924,7 +1347,7 @@ class MainActivity : ComponentActivity() {
                         album
                     }
 
-                    val entity = com.isai.player.data.db.entity.TrackEntity(
+                    val entity = TrackEntity(
                         id = id,
                         uri = contentUri.toString(),
                         title = title,
@@ -935,7 +1358,7 @@ class MainActivity : ComponentActivity() {
                         year = 2024,
                         trackNo = 1,
                         discNo = 1,
-                        durationMs = if (durationMs > 0) durationMs else 180000L,
+                        durationMs = resolvedDuration,
                         mimeType = mime,
                         sizeBytes = size,
                         lastModified = System.currentTimeMillis(),
@@ -960,7 +1383,7 @@ class MainActivity : ComponentActivity() {
                         put("folderPath", "$folderName/$title")
                         put("mimeType", mime)
                         put("sizeBytes", size)
-                        put("durationMs", entity.durationMs)
+                        put("durationMs", resolvedDuration)
                     }
                     tracks.put(trk)
                 }
@@ -975,12 +1398,18 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.e("IsaiAndroid", "Error querying MediaStore: ${e.message}", e)
+        } finally {
+            notifyScanProgress(false, "")
         }
 
-        runOnUiThread {
-            webView?.evaluateJavascript(
-                "window.__isaiOnFolderImported && window.__isaiOnFolderImported(\"Phone Storage & Downloads\", $tracks);",
-                null
+        if (tracks.length() == 0) {
+            dispatchJsToWebView(
+                "window.__isaiOnScanEmpty && window.__isaiOnScanEmpty(\"Phone Storage & Downloads\");"
+            )
+        } else {
+            val escapedTracksJson = JSONObject.quote(tracks.toString())
+            dispatchJsToWebView(
+                "window.__isaiOnFolderImported && window.__isaiOnFolderImported(\"Phone Storage & Downloads\", JSON.parse($escapedTracksJson), \"folder-mediastore-all\");"
             )
         }
     }

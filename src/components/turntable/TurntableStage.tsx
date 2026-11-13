@@ -20,7 +20,7 @@ interface TurntableStageProps {
   className?: string;
 }
 
-export const TurntableStage: React.FC<TurntableStageProps> = ({
+export const TurntableStage: React.FC<TurntableStageProps> = React.memo(({
   currentTrack,
   isPlaying,
   progress,
@@ -211,4 +211,4 @@ export const TurntableStage: React.FC<TurntableStageProps> = ({
       </div>
     </div>
   );
-};
+});

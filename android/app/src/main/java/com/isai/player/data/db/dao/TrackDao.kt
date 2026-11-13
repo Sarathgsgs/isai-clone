@@ -121,5 +121,8 @@ interface TrackDao {
 
     @Query("DELETE FROM tracks WHERE is_missing = 1")
     suspend fun purgeMissingTracks(): Int
+
+    @Query("DELETE FROM tracks WHERE id = :id OR uri = :uri")
+    suspend fun deleteTrackByIdOrUri(id: Long, uri: String): Int
 }
 

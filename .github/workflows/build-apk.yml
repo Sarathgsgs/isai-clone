@@ -122,7 +122,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Isai-v1.4.3-Debug-APK
+          name: Isai-v1.4.4-Debug-APK
           path: outputs/app-debug.apk
           if-no-files-found: error
 
@@ -130,40 +130,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: 'v1.4.3'
-          name: 'Isai Music Player v1.4.3'
+          tag_name: 'v1.4.4'
+          name: 'Isai Music Player v1.4.4'
           draft: false
           prerelease: false
           make_latest: true
           body: |
-            ## 🎵 Isai Music Player v1.4.3 Release
+            ## 🎵 Isai Music Player v1.4.4 Release
 
-            ### ✨ Fixes & Improvements in v1.4.3:
-            1. **Clean Media3 Notification Compilation**: Fixed `DefaultMediaNotificationProvider` compilation by declaring standard `media3_notification_small_icon` in `res/values/drawables.xml` and removing unsupported builder methods.
-            2. **Guaranteed Audio Playback**: Persistable URI permissions are taken on every SAF folder tree and multi-file picker selection, ensuring ExoPlayer and ContentDataSource can stream any audio file directly.
-            3. **Crash-Proof Track Selection**: Eliminated `android.os.TransactionTooLargeException` by removing raw byte arrays from IPC transactions, and made service connection reconnection auto-recovering.
-            4. **Picture-Disc Artwork Rendering**: Fixed artPath state mapping in React and added on-demand dynamic artwork extraction via MediaMetadataRetriever directly to the spinning vinyl platter and library lists.
-            5. **Multi-Folder Directories Support**: DocumentFile SAF tree resolution creates distinct directory cards for each imported folder without name collisions.
-            1. **Crash-Proof Track Selection**: Eliminated `android.os.TransactionTooLargeException` across MediaController Binder IPC by avoiding transmitting raw byte arrays, and made service connection reconnection auto-recovering so tracks play smoothly without closing.
-            2. **Picture-Disc Artwork Rendering**: Fixed artPath state mapping in React and added on-demand dynamic artwork extraction via MediaMetadataRetriever directly to the spinning vinyl platter and library lists.
-            3. **Multi-Folder Directories Support**: DocumentFile SAF tree resolution creates distinct directory cards for each imported folder without name collisions.
-            4. **Persistent Playback State**: Preserved native Android content URIs across page reloads in localStorage.
-            5. **Samsung Music Notification & Safe App Startup**: Configured small notification icon and official dark splash screen.
-            2. **Full Embedded Artwork & Tag Extraction**: Fixed premature ParcelFileDescriptor closing in MediaMetadataRetriever so Artist, Album, Title, and embedded album covers load with 100% fidelity.
-            3. **MediaStore Audio Scanner (Downloads Folder Fix)**: Added device-wide audio scanner bypassing Android 11+ Scoped Storage folder restrictions, giving unrestricted access to all music in Downloads and phone storage.
-            4. **Correct Official App Splash Logo**: Added Android 12+ `values-v31` splash styling and refreshed high-resolution launcher icons so the official Isai logo emblem shows on app startup.
-            5. **Safe Media Notification**: Exposes secure Content Provider URIs for playback notifications preventing system FileUriExposedException.
-            2. **Real ID3 Metadata & Embedded Album Artwork**: Full tag extraction for Track Title, Artist, Album, and embedded cover art displayed directly on the spinning vinyl platter.
-            3. **Clean Installation & First-Time Onboarding**: Mock demo tracks removed. Starts clean with an automated prompt to select your local music directory.
-            4. **Official Isai Splash Screen**: Updated dark splash screen featuring the official high-resolution Isai logo emblem.
-            5. **360° Circular Turntable Scratching**: True vinyl disc scratching—spin clockwise to seek forward and counter-clockwise to rewind.
-            6. **Samsung Music Style Media Notification**: Rich system notification with playback controls (Play/Pause/Next/Prev), track artwork, and lock screen seekbar.
-            7. **Comfortable Top Bar Spacing**: Lowered top action headers in library and NowPlaying views with generous clearance from phone notch, camera cutout, clock, and status bar icons.
+            ### ✨ Improvements & Fixes in v1.4.4:
+            1. **Automatic Duplicate Track Omission**: Automatically deduplicates identical tracks across storage folders and MediaStore scans in the backend.
+            2. **First-Try Folder Selection & Instant Scans**: Added parallelized SAF directory scanning (up to 6 levels deep), explicit permission gating, scan progress feedback, and JS callback queuing across activity resumes so folder picking works on the first attempt.
+            3. **Full-Area Swipe Tab Navigation**: Swipe left or right anywhere inside the library list to glide cleanly between Favourites, Playlists, Tracks, Albums, Artists, and Folders.
+            4. **Track Removal Three-Dots Menu**: Tapping `⋮` on any track now prompts to either **Remove from App** or **Delete Permanently from Device** using Android's native deletion flow.
+            5. **60 FPS Smooth UI & Performance Overhaul**: Eliminated background ticker re-renders on library lists, removed heavy backdrop-blur and SVG blur filters, added RAM artwork LRU caching, enabled hardware layer acceleration, and paused idle animations when paused.
 
             ### 📲 How to Install:
             1. Download `app-debug.apk` directly on your Android device below.
             2. Tap the file to install (allow "Install unknown apps" if prompted).
-            3. Tap **Select Music Folder** on first launch and enjoy your offline music!
+            3. Grant audio access and select your Music folder or scan all songs on first launch!
           files: outputs/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -25,7 +25,7 @@ export const TrackInfoModal: React.FC<TrackInfoModalProps> = ({ track, isOpen, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
       <div className="w-full max-w-md rounded-3xl bg-[#141419] border border-white/10 shadow-2xl p-6 flex flex-col gap-5 text-neutral-200">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-white/5">

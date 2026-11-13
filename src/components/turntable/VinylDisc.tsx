@@ -14,7 +14,7 @@ interface VinylDiscProps {
   onClick?: () => void;
 }
 
-export const VinylDisc: React.FC<VinylDiscProps> = ({
+export const VinylDisc: React.FC<VinylDiscProps> = React.memo(({
   isPlaying,
   rpm = 33,
   albumArt,
@@ -41,16 +41,22 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
   }, [albumArt]);
 
   useEffect(() => {
+    // Stop animation loop completely when paused to save CPU/GPU cycles
+    if (!isPlaying) {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
+    }
+
     let lastTimestamp = performance.now();
 
     const animate = (now: number) => {
       const dt = (now - lastTimestamp) / 1000;
       lastTimestamp = now;
 
-      // Only auto-rotate when playing and not being manually scratched
-      if (isPlaying && !isScratchingRef.current) {
-        // 33.33 RPM = 33.33 * 360 deg / 60s = 200 deg/sec
-        // 45 RPM = 45 * 360 deg / 60s = 270 deg/sec
+      if (!isScratchingRef.current) {
         const degPerSec = (rpm * 360) / 60;
         rotationRef.current = (rotationRef.current + degPerSec * dt) % 360;
         if (discRef.current) {
@@ -62,7 +68,10 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
 
     animFrameRef.current = requestAnimationFrame(animate);
     return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
     };
   }, [isPlaying, rpm]);
 
@@ -71,11 +80,10 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
     const rect = containerRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    return Math.atan2(clientY - centerY, clientX - centerX); // radians (-PI to +PI)
+    return Math.atan2(clientY - centerY, clientX - centerX);
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Only primary button for mouse, or any touch point
     if (e.button !== 0 && e.pointerType === 'mouse') return;
 
     isScratchingRef.current = true;
@@ -98,7 +106,6 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
     const currentAngle = getPointerAngle(e.clientX, e.clientY);
     let deltaAngle = currentAngle - lastAngleRef.current;
 
-    // Normalize wrap-around across -PI / +PI boundary
     if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
     if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
 
@@ -106,18 +113,14 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
     totalScratchedAngleRef.current += Math.abs(deltaAngle);
 
     if (Math.abs(deltaAngle) > 0.005) {
-      // 1. Physically rotate vinyl disc following user's circular finger rotation
       const deltaDeg = (deltaAngle * 180) / Math.PI;
       rotationRef.current = (rotationRef.current + deltaDeg) % 360;
       if (discRef.current) {
         discRef.current.style.transform = `rotate(${rotationRef.current}deg)`;
       }
 
-      // 2. Play realistic physical DJ vinyl scratch audio modulated by angular velocity
       audioEngine.playScratchSound(deltaDeg * 2.5);
 
-      // 3. Circular scrub: Clockwise rotation seeks forward, counter-clockwise seeks backward
-      // One full 360 rotation (2*PI radians) scrubs ~12 seconds of playback
       const deltaSeconds = (deltaAngle / (2 * Math.PI)) * 12;
       onScratch?.(deltaSeconds);
     }
@@ -136,7 +139,6 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
       // Safe fallback
     }
 
-    // Quick tap without circular spin toggles play/pause; otherwise complete scratch
     if (totalScratchedAngleRef.current < 0.1) {
       onClick?.();
     } else {
@@ -148,7 +150,6 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
     handlePointerUp(e);
   };
 
-  // Generate fallback vibrant gradient if no album cover art
   const seedHash = fallbackSeed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const hue1 = seedHash % 360;
   const hue2 = (hue1 + 45) % 360;
@@ -161,14 +162,14 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
-      className="relative select-none rounded-full flex items-center justify-center shadow-2xl touch-none cursor-grab active:cursor-grabbing transition-shadow duration-200"
+      className="relative select-none rounded-full flex items-center justify-center shadow-2xl touch-none cursor-grab active:cursor-grabbing"
       style={{
         width: `${sizePx}px`,
         height: `${sizePx}px`,
         background: '#0D0D10',
         boxShadow: isScratchingUI
-          ? '0 30px 60px -10px rgba(0, 0, 0, 0.9), 0 0 35px rgba(255, 138, 61, 0.45)'
-          : '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(255, 138, 61, 0.12)',
+          ? '0 24px 48px -10px rgba(0, 0, 0, 0.9), 0 0 28px rgba(255, 138, 61, 0.45)'
+          : '0 20px 40px -12px rgba(0, 0, 0, 0.75)',
       }}
     >
       {/* Outer Platter Rim */}
@@ -180,21 +181,21 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
         }}
       />
 
-      {/* Rotating Vinyl Disc Surface (Picture Disc: Full Artwork Coverage) */}
+      {/* Rotating Vinyl Disc Surface */}
       <div
         ref={discRef}
-        className="relative w-full h-full rounded-full overflow-hidden flex items-center justify-center shadow-inner"
+        className="relative w-full h-full rounded-full overflow-hidden flex items-center justify-center"
         style={{
           background: '#0c0c10',
           transform: `rotate(${rotationRef.current}deg)`,
-          willChange: 'transform',
+          willChange: isPlaying ? 'transform' : 'auto',
         }}
       >
-        {/* 1. Full-Bleed Track Image Picture Disc */}
         {albumArt && !imgError ? (
           <img
             src={albumArt}
             alt="Track Artwork"
+            decoding="async"
             onError={() => setImgError(true)}
             className="absolute inset-0 w-full h-full object-cover rounded-full pointer-events-none select-none"
             crossOrigin="anonymous"
@@ -204,13 +205,13 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
             className="absolute inset-0 w-full h-full rounded-full flex flex-col items-center justify-center pointer-events-none"
             style={{ background: fallbackGradient }}
           >
-            <Disc className="w-20 h-20 text-white/20 mb-2 animate-pulse" />
+            <Disc className="w-20 h-20 text-white/20 mb-2" />
             <span className="text-xs uppercase tracking-widest font-black text-white/60">ISAI</span>
             <span className="text-[10px] text-white/40 font-mono mt-0.5">33⅓ RPM HI-FI</span>
           </div>
         )}
 
-        {/* 2. Fine Concentric Vinyl Grooves Overlay across the entire picture disc */}
+        {/* Fine Concentric Vinyl Grooves Overlay */}
         <div
           className="absolute inset-0 rounded-full pointer-events-none"
           style={{
@@ -224,12 +225,11 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
                 rgba(0, 0, 0, 0.3) 4px
               )
             `,
-            mixBlendMode: 'overlay',
-            opacity: 0.88,
+            opacity: 0.72,
           }}
         />
 
-        {/* 3. Subtle Outer Lead-in Rim & Dark Edge Vignette */}
+        {/* Lead-in Rim Vignette */}
         <div
           className="absolute inset-0 rounded-full pointer-events-none"
           style={{
@@ -238,45 +238,38 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
           }}
         />
 
-        {/* 4. Track Gap Separator Rings (Subtle concentric track bands) */}
+        {/* Track Gap Separator Rings */}
         <div
           className="absolute rounded-full pointer-events-none border border-black/35"
-          style={{ width: '82%', height: '82%', boxShadow: 'inset 0 0 2px rgba(255, 255, 255, 0.15)' }}
+          style={{ width: '82%', height: '82%' }}
         />
         <div
           className="absolute rounded-full pointer-events-none border border-black/35"
-          style={{ width: '60%', height: '60%', boxShadow: 'inset 0 0 2px rgba(255, 255, 255, 0.15)' }}
+          style={{ width: '60%', height: '60%' }}
         />
         <div
           className="absolute rounded-full pointer-events-none border border-black/35"
-          style={{ width: '40%', height: '40%', boxShadow: 'inset 0 0 2px rgba(255, 255, 255, 0.15)' }}
+          style={{ width: '40%', height: '40%' }}
         />
 
-        {/* 5. Center Spindle Hub & Ring (Translucent ring so artwork still shows through!) */}
+        {/* Center Spindle Hub */}
         <div
-          className="absolute rounded-full pointer-events-none border border-white/30 bg-black/30 backdrop-blur-[1px] flex items-center justify-center shadow-lg"
+          className="absolute rounded-full pointer-events-none border border-white/30 bg-black/45 flex items-center justify-center shadow-lg"
           style={{ width: '22%', height: '22%' }}
         >
-          {/* Subtle inner ring mark */}
           <div className="absolute inset-1 rounded-full border border-white/20" />
-
-          {/* Center Spindle Hole */}
-          <div
-            className="w-7 h-7 rounded-full bg-[#08080a] border border-neutral-400/50 flex items-center justify-center shadow-inner"
-          >
-            {/* Center Chrome Spindle Pin */}
+          <div className="w-7 h-7 rounded-full bg-[#08080a] border border-neutral-400/50 flex items-center justify-center shadow-inner">
             <div
               className="w-2.5 h-2.5 rounded-full"
               style={{
                 background: 'radial-gradient(circle at 35% 35%, #ffffff 0%, #a9afba 60%, #30333a 100%)',
-                boxShadow: '0 0 3px rgba(0,0,0,0.9)',
               }}
             />
           </div>
         </div>
       </div>
 
-      {/* Static Vinyl Specular Reflection Sheen (Fixed light source, does not rotate) */}
+      {/* Static Vinyl Specular Reflection Sheen */}
       <div
         className="absolute inset-0 rounded-full pointer-events-none overflow-hidden"
         style={{
@@ -284,19 +277,17 @@ export const VinylDisc: React.FC<VinylDiscProps> = ({
             conic-gradient(
               from 45deg at 50% 50%,
               transparent 0deg,
-              rgba(255, 255, 255, 0.12) 35deg,
-              rgba(255, 255, 255, 0.02) 65deg,
+              rgba(255, 255, 255, 0.08) 35deg,
+              rgba(255, 255, 255, 0.01) 65deg,
               transparent 90deg,
               transparent 180deg,
-              rgba(255, 255, 255, 0.12) 215deg,
-              rgba(255, 255, 255, 0.02) 245deg,
+              rgba(255, 255, 255, 0.08) 215deg,
+              rgba(255, 255, 255, 0.01) 245deg,
               transparent 270deg
             )
           `,
-          mixBlendMode: 'screen',
         }}
       />
-
     </div>
   );
-};
+});

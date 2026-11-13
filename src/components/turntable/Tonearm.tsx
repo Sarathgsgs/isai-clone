@@ -11,7 +11,7 @@ interface TonearmProps {
   stageHeight: number;
 }
 
-export const Tonearm: React.FC<TonearmProps> = ({
+export const Tonearm: React.FC<TonearmProps> = React.memo(({
   geometry,
   currentAngle,
   isLifted,
@@ -89,7 +89,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
       }
     }
 
-    // If pointer moved less than 5px, it is a tap on the tonebar to toggle play/pause/resume!
     if (!hasMovedRef.current) {
       setDragAngle(null);
       startPointerRef.current = null;
@@ -106,7 +105,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
     startPointerRef.current = null;
   };
 
-  // Keyboard accessibility
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' && !isDragging) {
@@ -121,16 +119,14 @@ export const Tonearm: React.FC<TonearmProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [geometry, activeAngle, isDragging, onSeekAngle]);
 
-  // Pivot point and arm length
   const { pivot, armLength } = geometry;
   const armUnit = armLength / 100;
 
-  // Lift offset: when lifted, shadow expands/shifts and arm slightly scales
+  // Lightweight shadow offset without expensive SVG Gaussian blur filter
   const liftFactor = isLifted ? 1.0 : 0.0;
-  const shadowOffsetY = 6 + liftFactor * 10;
-  const shadowOffsetX = 3 + liftFactor * 6;
-  const shadowBlur = 4 + liftFactor * 8;
-  const shadowOpacity = 0.4 - liftFactor * 0.18;
+  const shadowOffsetY = 5 + liftFactor * 8;
+  const shadowOffsetX = 3 + liftFactor * 5;
+  const shadowOpacity = 0.35 - liftFactor * 0.14;
 
   return (
     <svg
@@ -143,7 +139,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
       style={{ zIndex: 30 }}
     >
       <defs>
-        {/* Metallic gradients */}
         <linearGradient id="tonearmTubeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#4a4e57" />
           <stop offset="35%" stopColor="#f2f4f8" />
@@ -165,30 +160,16 @@ export const Tonearm: React.FC<TonearmProps> = ({
           <stop offset="85%" stopColor="#4a4e57" />
           <stop offset="100%" stopColor="#1d1e22" />
         </radialGradient>
-
-        <filter id="tonearmShadowFilter" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceAlpha" stdDeviation={shadowBlur} />
-          <feOffset dx={shadowOffsetX} dy={shadowOffsetY} result="offsetblur" />
-          <feComponentTransfer>
-            <feFuncA type="linear" slope={shadowOpacity} />
-          </feComponentTransfer>
-          <feMerge>
-            <feMergeNode />
-          </feMerge>
-        </filter>
       </defs>
 
-      {/* 1. Base Pivot Gimbal Assembly (Fixed in space at pivot) */}
+      {/* 1. Base Pivot Gimbal Assembly */}
       <g transform={`translate(${pivot.x}, ${pivot.y})`}>
-        {/* Base Turret Outer Mounting Ring */}
         <circle r={armUnit * 18} fill="#141418" stroke="#33373f" strokeWidth="2" />
         <circle r={armUnit * 14} fill="url(#pivotBaseGrad)" stroke="#1a1b1e" strokeWidth="1" />
         <circle r={armUnit * 9} fill="#0d0d10" />
         <circle r={armUnit * 6} fill="url(#pivotBaseGrad)" />
-        {/* Chrome Gimbal Pivot Center Dot */}
         <circle r={armUnit * 2.5} fill="#ffffff" />
 
-        {/* Anti-skate dial knob indicator */}
         <line
           x1={-armUnit * 15}
           y1={-armUnit * 12}
@@ -200,16 +181,15 @@ export const Tonearm: React.FC<TonearmProps> = ({
         />
       </g>
 
-      {/* 2. Rotating Tonearm Assembly (Rotates around Pivot by activeAngle) */}
+      {/* 2. Rotating Tonearm Assembly */}
       <g
         transform={`translate(${pivot.x}, ${pivot.y}) rotate(${activeAngle - 90})`}
         style={{
           transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.2, 0.8, 0.4, 1)',
         }}
       >
-        {/* --- DYNAMIC DROP SHADOW --- */}
-        <g filter="url(#tonearmShadowFilter)" opacity={0.6}>
-          {/* Shadow Tube */}
+        {/* Lightweight Solid Drop Shadow */}
+        <g transform={`translate(${shadowOffsetX}, ${shadowOffsetY})`} opacity={shadowOpacity}>
           <path
             d={`M 0,${6 * armUnit} C 0,${38 * armUnit} 0,${62 * armUnit} ${-3 * armUnit},${82 * armUnit}`}
             stroke="#000000"
@@ -217,7 +197,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
             fill="none"
             strokeLinecap="round"
           />
-          {/* Shadow Headshell */}
           <rect
             x={-6 * armUnit}
             y={82 * armUnit}
@@ -228,8 +207,7 @@ export const Tonearm: React.FC<TonearmProps> = ({
           />
         </g>
 
-        {/* --- REAR COUNTERWEIGHT (Behind Pivot) --- */}
-        {/* Stub shaft */}
+        {/* Rear Counterweight */}
         <rect
           x={-armUnit * 2}
           y={-armUnit * 28}
@@ -237,7 +215,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
           height={armUnit * 28}
           fill="url(#tonearmTubeGrad)"
         />
-        {/* Heavy Brass / Steel Counterweight Ring */}
         <rect
           x={-armUnit * 9}
           y={-armUnit * 26}
@@ -248,15 +225,13 @@ export const Tonearm: React.FC<TonearmProps> = ({
           stroke="#1b1c20"
           strokeWidth="1.5"
         />
-        {/* Counterweight grams dial markings */}
         <line x1={-armUnit * 7} y1={-armUnit * 20} x2={armUnit * 7} y2={-armUnit * 20} stroke="#222" strokeWidth="1" />
         <line x1={0} y1={-armUnit * 26} x2={0} y2={-armUnit * 12} stroke="#ff8a3d" strokeWidth="1.2" />
 
-        {/* --- BEARING GIMBAL COLLAR --- */}
+        {/* Bearing Gimbal Collar */}
         <circle r={armUnit * 5.5} fill="#2a2c33" stroke="#4a4e57" strokeWidth="1" />
 
-        {/* --- MAIN METALLIC ARM TUBE --- */}
-        {/* Classical S-curve arm tube */}
+        {/* Main Metallic Arm Tube */}
         <path
           d={`M 0,${5 * armUnit} C ${1 * armUnit},${35 * armUnit} ${-1 * armUnit},${60 * armUnit} ${-3 * armUnit},${82 * armUnit}`}
           stroke="url(#tonearmTubeGrad)"
@@ -264,7 +239,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
           fill="none"
           strokeLinecap="round"
         />
-        {/* Arm Tube Specular Center Highlight */}
         <path
           d={`M 0,${5 * armUnit} C ${1 * armUnit},${35 * armUnit} ${-1 * armUnit},${60 * armUnit} ${-3 * armUnit},${82 * armUnit}`}
           stroke="#ffffff"
@@ -273,7 +247,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
           strokeLinecap="round"
           opacity={0.7}
         />
-        {/* Wide interactive touch hit area across the entire tonebar tube */}
         <path
           d={`M 0,${-10 * armUnit} C ${1 * armUnit},${35 * armUnit} ${-1 * armUnit},${60 * armUnit} ${-3 * armUnit},${82 * armUnit}`}
           stroke="transparent"
@@ -284,9 +257,8 @@ export const Tonearm: React.FC<TonearmProps> = ({
           onPointerDown={handlePointerDown}
         />
 
-        {/* --- HEADSHELL & CARTRIDGE --- */}
+        {/* Headshell & Cartridge */}
         <g transform={`translate(${-3 * armUnit}, ${82 * armUnit})`}>
-          {/* Connector Collar Ring */}
           <rect
             x={-armUnit * 3}
             y={0}
@@ -298,7 +270,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
             strokeWidth="0.8"
           />
 
-          {/* Headshell Body (Matte black aluminum alloy) */}
           <path
             d={`
               M ${-armUnit * 4.5},${armUnit * 3}
@@ -312,11 +283,9 @@ export const Tonearm: React.FC<TonearmProps> = ({
             strokeWidth="1.2"
           />
 
-          {/* Cooling vents / styling cutouts */}
           <rect x={-armUnit * 2} y={armUnit * 6} width={armUnit * 4} height={armUnit * 2} rx="1" fill="#0d0d10" />
           <rect x={-armUnit * 2} y={armUnit * 10} width={armUnit * 4} height={armUnit * 2} rx="1" fill="#0d0d10" />
 
-          {/* Finger Lift Hook on the right side */}
           <path
             d={`
               M ${armUnit * 3.8},${armUnit * 8}
@@ -328,7 +297,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
             strokeLinecap="round"
           />
 
-          {/* Cartridge (Under headshell) */}
           <rect
             x={-armUnit * 2.8}
             y={armUnit * 12}
@@ -340,7 +308,6 @@ export const Tonearm: React.FC<TonearmProps> = ({
             strokeWidth="1"
           />
 
-          {/* Stylus Needle Cantilever & Tip (Point T) */}
           <line
             x1={0}
             y1={armUnit * 18}
@@ -350,16 +317,9 @@ export const Tonearm: React.FC<TonearmProps> = ({
             strokeWidth={armUnit * 1.2}
             strokeLinecap="round"
           />
-          {/* Glowing Diamond Needle Stylus Point */}
-          <circle
-            cx={0}
-            cy={armUnit * 21.5}
-            r={armUnit * 1.6}
-            fill="#ff8a3d"
-            filter="drop-shadow(0 0 3px rgba(255, 138, 61, 0.9))"
-          />
+          <circle cx={0} cy={armUnit * 21.5} r={armUnit * 2.8} fill="#ff8a3d" opacity={0.28} />
+          <circle cx={0} cy={armUnit * 21.5} r={armUnit * 1.6} fill="#ff8a3d" />
 
-          {/* --- INTERACTIVE DRAGGABLE HEADSHELL HIT AREA --- */}
           <circle
             cx={0}
             cy={armUnit * 14}
@@ -372,4 +332,4 @@ export const Tonearm: React.FC<TonearmProps> = ({
       </g>
     </svg>
   );
-};
+});

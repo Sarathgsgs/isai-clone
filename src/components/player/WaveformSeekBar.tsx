@@ -6,15 +6,17 @@ interface WaveformSeekBarProps {
   duration: number; // in seconds
   onSeek: (seconds: number) => void;
   waveform?: number[];
+  seedKey?: string;
   style?: SeekBarStyle;
   className?: string;
 }
 
-export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
+export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = React.memo(({
   currentTime,
   duration,
   onSeek,
   waveform,
+  seedKey = 'isai-track',
   style = 'waveform_bars',
   className = '',
 }) => {
@@ -24,30 +26,37 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
   const [scrubFraction, setScrubFraction] = useState<number | null>(null);
 
   const safeDuration = duration > 0 ? duration : 1;
-  const progress = scrubFraction !== null 
-    ? scrubFraction 
+  const progress = scrubFraction !== null
+    ? scrubFraction
     : Math.max(0, Math.min(1, currentTime / safeDuration));
 
-  // Synthesize or normalize 60 waveform bars
+  // Synthesize or normalize 60 waveform bars deterministically from track seedKey
   const bars = useMemo(() => {
     if (waveform && waveform.length >= 20) {
-      // Interpolate or downsample to 60 bars
-      const res = [];
+      const res: number[] = [];
       const step = waveform.length / 60;
       for (let i = 0; i < 60; i++) {
         const idx = Math.min(waveform.length - 1, Math.floor(i * step));
-        res.push(waveform[idx] || 0.2);
+        res.push(waveform[idx] || 0.25);
       }
       return res;
     }
-    // Realistic pseudo-waveform
-    const res = [];
+
+    let seed = 0;
+    for (let i = 0; i < seedKey.length; i++) {
+      seed = (seed * 31 + seedKey.charCodeAt(i)) | 0;
+    }
+
+    const res: number[] = [];
     for (let i = 0; i < 60; i++) {
-      const v = 0.25 + 0.55 * Math.sin((i / 60) * Math.PI) * (0.6 + 0.4 * Math.sin(i * 0.8));
-      res.push(Math.max(0.1, Math.min(0.95, v)));
+      seed = (seed * 1664525 + 1013904223) | 0;
+      const rand = ((seed >>> 0) % 1000) / 1000;
+      const envelope = Math.sin((i / 59) * Math.PI);
+      const val = 0.18 + 0.68 * (0.45 * envelope + 0.55 * rand);
+      res.push(Math.max(0.12, Math.min(0.95, val)));
     }
     return res;
-  }, [waveform]);
+  }, [waveform, seedKey]);
 
   const formatTime = (secs: number) => {
     if (isNaN(secs) || secs < 0) return '0:00';
@@ -130,7 +139,7 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
               return (
                 <div
                   key={i}
-                  className="flex-1 rounded-full transition-all duration-75 relative"
+                  className="flex-1 rounded-full relative"
                   style={{
                     height: `${barHeight}px`,
                     backgroundColor: isPlayed
@@ -138,7 +147,6 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
                       : isHovered
                       ? '#7c4826'
                       : 'rgba(255, 255, 255, 0.16)',
-                    boxShadow: isPlayed ? '0 0 8px rgba(255, 138, 61, 0.4)' : 'none',
                   }}
                 />
               );
@@ -149,7 +157,6 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
         {style === 'waveform_line' && (
           <div className="w-full h-full relative flex items-center px-1">
             <svg className="w-full h-10 overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 40">
-              {/* Background Path */}
               <path
                 d={bars.reduce(
                   (acc, amp, idx) =>
@@ -161,7 +168,6 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
                 strokeWidth="2.5"
                 strokeLinecap="round"
               />
-              {/* Played Path Clip */}
               <clipPath id="playedWaveClip">
                 <rect x="0" y="0" width={`${progress * 100}`} height="40" />
               </clipPath>
@@ -176,24 +182,20 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
                 strokeWidth="3"
                 strokeLinecap="round"
                 clipPath="url(#playedWaveClip)"
-                filter="drop-shadow(0 0 4px #ff8a3d)"
               />
             </svg>
           </div>
         )}
 
         {style === 'classic' && (
-          <div className="w-full h-2 bg-white/10 rounded-full relative overflow-hidden group-hover:h-2.5 transition-all">
+          <div className="w-full h-2 bg-white/10 rounded-full relative overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-amber-600 to-amber-500 rounded-full relative"
               style={{ width: `${progress * 100}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md -mr-1.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
+            />
           </div>
         )}
 
-        {/* Hover Time Tooltip */}
         {hoverFraction !== null && (
           <div
             className="absolute -top-7 transform -translate-x-1/2 px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-[10px] font-mono text-amber-300 pointer-events-none shadow-lg z-20"
@@ -211,4 +213,4 @@ export const WaveformSeekBar: React.FC<WaveformSeekBarProps> = ({
       </div>
     </div>
   );
-};
+});

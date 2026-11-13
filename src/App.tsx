@@ -3,7 +3,6 @@ import {
   Track,
   Album,
   Artist,
-  Playlist,
   RepeatMode,
   PlayerSettings,
   EqualizerState,
@@ -19,6 +18,7 @@ import { EqualizerModal } from './components/equalizer/EqualizerModal';
 import { SettingsModal } from './components/dialogs/SettingsModal';
 import { SleepTimerModal } from './components/dialogs/SleepTimerModal';
 import { TrackInfoModal } from './components/dialogs/TrackInfoModal';
+import { TrackActionModal } from './components/dialogs/TrackActionModal';
 import {
   Disc,
   Music,
@@ -26,12 +26,8 @@ import {
   Folder,
   FolderPlus,
   Search,
-  Sliders,
-  Moon,
-  Settings,
   Play,
   Shuffle,
-  Heart,
   MoreVertical,
   Upload,
   ArrowUp,
@@ -41,31 +37,158 @@ import {
   Trash2,
   ChevronRight,
   PhoneOff,
-  Shield,
+  Loader2,
 } from 'lucide-react';
 
+type CategoryTab = 'favourites' | 'playlists' | 'tracks' | 'albums' | 'artists' | 'folders';
+
+const CATEGORY_TABS: { id: CategoryTab; label: string }[] = [
+  { id: 'favourites', label: 'Favourites' },
+  { id: 'playlists', label: 'Playlists' },
+  { id: 'tracks', label: 'Tracks' },
+  { id: 'albums', label: 'Albums' },
+  { id: 'artists', label: 'Artists' },
+  { id: 'folders', label: 'Folders' },
+];
+
+const TAB_IDS: CategoryTab[] = CATEGORY_TABS.map((t) => t.id);
+
+function getTrackFingerprint(t: Track): string {
+  const normTitle = (t.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const normArtist = (t.artist || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const durBucket =
+    t.durationMs && t.durationMs > 0
+      ? Math.round(t.durationMs / 3000)
+      : t.sizeBytes && t.sizeBytes > 0
+      ? -Math.round(t.sizeBytes / 4096)
+      : 0;
+  return `${normTitle}|${normArtist}|${durBucket}`;
+}
+
+function getTrackRichness(t: Track): number {
+  let score = 0;
+  if (t.artPath) score += 2;
+  if (t.artist && t.artist !== 'Unknown Artist' && t.artist !== 'Local Artist') score += 2;
+  if (t.nativeUri) score += 1;
+  if (t.isFavorite) score += 1;
+  return score;
+}
+
+function deduplicateTracks(list: Track[]): Track[] {
+  const seenKeys = new Map<string, number>();
+  const result: Track[] = [];
+
+  for (const track of list) {
+    const uriKey = track.nativeUri || track.uri;
+    const fpKey = `fp:${getTrackFingerprint(track)}`;
+
+    const existingUriIdx = uriKey ? seenKeys.get(`uri:${uriKey}`) : undefined;
+    const existingFpIdx = seenKeys.get(fpKey);
+    const existingIdx = existingUriIdx !== undefined ? existingUriIdx : existingFpIdx;
+
+    if (existingIdx !== undefined) {
+      const existing = result[existingIdx];
+      if (getTrackRichness(track) > getTrackRichness(existing)) {
+        result[existingIdx] = {
+          ...track,
+          isFavorite: existing.isFavorite || track.isFavorite,
+          lyricsLrc: track.lyricsLrc || existing.lyricsLrc,
+          hasLyrics: track.hasLyrics || existing.hasLyrics,
+        };
+      } else if (track.isFavorite && !existing.isFavorite) {
+        result[existingIdx] = { ...existing, isFavorite: true };
+      }
+      if (uriKey) seenKeys.set(`uri:${uriKey}`, existingIdx);
+      seenKeys.set(fpKey, existingIdx);
+      continue;
+    }
+
+    const idx = result.length;
+    result.push(track);
+    if (uriKey) seenKeys.set(`uri:${uriKey}`, idx);
+    seenKeys.set(fpKey, idx);
+  }
+
+  return result;
+}
+
+interface TrackRowProps {
+  track: Track;
+  isCurrent: boolean;
+  onPlay: (track: Track) => void;
+  onOpenActions: (track: Track) => void;
+}
+
+const TrackRow: React.FC<TrackRowProps> = React.memo(
+  ({ track, isCurrent, onPlay, onOpenActions }) => {
+    return (
+      <div
+        onClick={() => onPlay(track)}
+        className="track-row-opt flex items-center justify-between py-2.5 px-2 rounded-2xl hover:bg-neutral-900/60 active:bg-neutral-900 transition-colors cursor-pointer group"
+      >
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
+            {track.artPath && (
+              <img
+                src={track.artPath}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            )}
+            <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+              <Music className="w-5 h-5 text-neutral-300" />
+            </div>
+          </div>
+
+          <div className="min-w-0 flex-1 pr-2">
+            <h3 className={`text-sm font-medium truncate ${isCurrent ? 'text-amber-400 font-bold' : 'text-white'}`}>
+              {track.title}
+            </h3>
+            <p className="text-xs text-neutral-400 truncate mt-0.5">{track.artist}</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenActions(track);
+          }}
+          className="p-2.5 -mr-1 rounded-full text-neutral-500 hover:text-white active:bg-white/10 transition-colors cursor-pointer"
+          title="Track Options"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+);
+
 export default function App() {
-  // Library tracks state
+  // Library tracks state (auto-deduplicated on load)
   const [tracks, setTracks] = useState<Track[]>(() => {
     const saved = localStorage.getItem('isai_tracks');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return deduplicateTracks(parsed);
         }
       } catch {
         // Fall back
       }
     }
-    return INITIAL_TRACKS;
+    return deduplicateTracks(INITIAL_TRACKS);
   });
 
-  // Player state
+  // Player state (currentTime/duration are intentionally excluded from App state for 60fps list performance)
   const [currentTrack, setCurrentTrack] = useState<Track | null>(() => tracks[0] || null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(tracks[0]?.durationMs ? tracks[0].durationMs / 1000 : 180);
   const [volume, setVolume] = useState(0.85);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('OFF');
   const [isShuffled, setIsShuffled] = useState(false);
@@ -83,9 +206,26 @@ export default function App() {
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false);
   const [isTrackInfoOpen, setIsTrackInfoOpen] = useState(false);
   const [inspectTrack, setInspectTrack] = useState<Track | null>(null);
+  const [actionTrack, setActionTrack] = useState<Track | null>(null);
+  const [isTrackActionOpen, setIsTrackActionOpen] = useState(false);
 
-  // Active Samsung Music Category Tabs: Favourites | Playlists | Tracks | Albums | Artists | Folders
-  type CategoryTab = 'favourites' | 'playlists' | 'tracks' | 'albums' | 'artists' | 'folders';
+  // Scan progress & toast notifications
+  const [scanStatus, setScanStatus] = useState<{ scanning: boolean; message: string }>({
+    scanning: false,
+    message: '',
+  });
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3000);
+  }, []);
+
+  // Category Tabs
   const [activeTab, setActiveTab] = useState<CategoryTab>('tracks');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchInput, setShowSearchInput] = useState(false);
@@ -99,6 +239,24 @@ export default function App() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isAddFolderModalOpen, setIsAddFolderModalOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Tab bar scroll refs & Swipe gesture refs
+  const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const swipeContentRef = useRef<HTMLDivElement>(null);
+  const swipeStartRef = useRef<{
+    x: number;
+    y: number;
+    time: number;
+    lockedAxis: 'x' | 'y' | null;
+    lastDx: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const activeBtn = tabButtonRefs.current[activeTab];
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     localStorage.setItem('isai_sort_by', sortBy);
@@ -146,14 +304,11 @@ export default function App() {
             ? parsed.excludePrefixes
             : defaultSettings.excludePrefixes,
         };
-      } catch {
-        // Fall back
-      }
+      } catch {}
     }
     return defaultSettings;
   });
 
-  // Helper to determine if a track is excluded based on prefix configuration
   const isTrackExcluded = useCallback(
     (track: Track) => {
       if (
@@ -176,15 +331,8 @@ export default function App() {
     [settings.excludePrefixesEnabled, settings.excludePrefixes]
   );
 
-  // List of tracks excluded by the prefix filter
-  const excludedTracks = useMemo(() => {
-    return tracks.filter((t) => isTrackExcluded(t));
-  }, [tracks, isTrackExcluded]);
-
-  // Non-excluded active library tracks
-  const nonExcludedTracks = useMemo(() => {
-    return tracks.filter((t) => !isTrackExcluded(t));
-  }, [tracks, isTrackExcluded]);
+  const excludedTracks = useMemo(() => tracks.filter((t) => isTrackExcluded(t)), [tracks, isTrackExcluded]);
+  const nonExcludedTracks = useMemo(() => tracks.filter((t) => !isTrackExcluded(t)), [tracks, isTrackExcluded]);
 
   // Equalizer State
   const [equalizer, setEqualizer] = useState<EqualizerState>(() => {
@@ -192,9 +340,7 @@ export default function App() {
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch {
-        // Fall back
-      }
+      } catch {}
     }
     return {
       enabled: true,
@@ -207,15 +353,12 @@ export default function App() {
     };
   });
 
-  // Custom EQ Presets
   const [customPresets, setCustomPresets] = useState<EqPreset[]>(() => {
     const saved = localStorage.getItem('isai_custom_eq_presets');
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch {
-        // Fall back
-      }
+      } catch {}
     }
     return [];
   });
@@ -229,7 +372,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // Persist settings & EQ
   useEffect(() => {
     localStorage.setItem('isai_settings', JSON.stringify(settings));
   }, [settings]);
@@ -243,11 +385,12 @@ export default function App() {
     localStorage.setItem('isai_custom_eq_presets', JSON.stringify(customPresets));
   }, [customPresets]);
 
+  // Persist lightweight tracks (without 60-float waveform arrays) cleanly
   useEffect(() => {
     try {
-      const serializable = tracks.map((t) => ({
-        ...t,
-        uri: t.uri.startsWith('blob:') ? '' : t.uri,
+      const serializable = tracks.map(({ waveform: _w, ...rest }) => ({
+        ...rest,
+        uri: rest.uri.startsWith('blob:') ? '' : rest.uri,
       }));
       localStorage.setItem('isai_tracks', JSON.stringify(serializable));
     } catch {
@@ -255,9 +398,10 @@ export default function App() {
     }
   }, [tracks]);
 
-  // Android Native Back Button / Gesture Navigation Support
+  // Android Native Back Button Navigation Support
   useEffect(() => {
     (window as any).__isaiGoBack = () => {
+      if (isTrackActionOpen) { setIsTrackActionOpen(false); return true; }
       if (isTrackInfoOpen) { setIsTrackInfoOpen(false); return true; }
       if (isEqualizerOpen) { setIsEqualizerOpen(false); return true; }
       if (isSettingsOpen) { setIsSettingsOpen(false); return true; }
@@ -274,6 +418,7 @@ export default function App() {
       delete (window as any).__isaiGoBack;
     };
   }, [
+    isTrackActionOpen,
     isTrackInfoOpen,
     isEqualizerOpen,
     isSettingsOpen,
@@ -286,50 +431,181 @@ export default function App() {
     showSearchInput,
   ]);
 
-  // Android Native Folder (SAF Document Tree) and Multi-File Listeners
-  useEffect(() => {
-    (window as any).__isaiOnFolderImported = (folderName: string, rawTracks: any[], customFolderId?: string) => {
-      if (!rawTracks || rawTracks.length === 0) return;
-      const folderId = customFolderId || `folder-${folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}-${Date.now().toString(36)}`;
-      const newTracks: Track[] = rawTracks.map((raw) => {
-        const waveform = Array.from({ length: 60 }, () =>
-          Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
-        );
-        return {
-          id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          uri: raw.streamUrl || raw.uri,
-          nativeUri: raw.uri,
-          title: raw.title || 'Audio Track',
-          artist: raw.artist || 'Local Artist',
-          album: raw.album || folderName,
-          artPath: raw.artPath || undefined,
-          durationMs: raw.durationMs || 180000,
-          mimeType: raw.mimeType || 'audio/mpeg',
-          sizeBytes: raw.sizeBytes,
-          dateAdded: Date.now(),
-          isFavorite: false,
-          hasLyrics: false,
-          waveform,
-          isCustomFile: true,
-          folderPath: raw.folderPath || `${folderName}/${raw.title}`,
-          folderId,
-        };
-      });
+  // Playback helpers
+  const playTrackAtIndex = useCallback(
+    async (index: number, queueOverride?: Track[]) => {
+      const targetQueue = queueOverride || queue;
+      if (index < 0 || index >= targetQueue.length) return;
+      const track = targetQueue[index];
+      setCurrentIndex(index);
+      setCurrentTrack(track);
 
-      setTracks((prev) => [...newTracks, ...prev]);
-      const playable = newTracks.filter((t) => !isTrackExcluded(t));
+      audioEngine.playNeedleDropSound();
+      setIsLifted(false);
+      await audioEngine.loadTrack(track, true);
+      setIsPlaying(true);
+    },
+    [queue]
+  );
+
+  const handlePlayTrack = useCallback(
+    (track: Track, newQueue?: Track[]) => {
+      const q = newQueue || tracks;
+      const idx = q.findIndex((t) => t.id === track.id);
+      if (idx !== -1) {
+        setQueue(q);
+        playTrackAtIndex(idx, q);
+      } else {
+        const nextQ = [track, ...q];
+        setQueue(nextQ);
+        playTrackAtIndex(0, nextQ);
+      }
+      setIsNowPlayingOpen(true);
+    },
+    [tracks, playTrackAtIndex]
+  );
+
+  // Remove a track from library & queue cleanly
+  const removeTrackFromLocalState = useCallback(
+    (trackId: string) => {
+      setTracks((prev) => prev.filter((t) => t.id !== trackId));
+      setQueue((prevQueue) => {
+        const idx = prevQueue.findIndex((t) => t.id === trackId);
+        if (idx === -1) return prevQueue;
+        const nextQueue = prevQueue.filter((t) => t.id !== trackId);
+
+        if (currentTrack?.id === trackId) {
+          if (nextQueue.length === 0) {
+            audioEngine.pause();
+            setIsPlaying(false);
+            setIsLifted(true);
+            setCurrentTrack(null);
+            setCurrentIndex(0);
+            setIsNowPlayingOpen(false);
+          } else {
+            const nextIdx = Math.min(idx, nextQueue.length - 1);
+            const nextTrk = nextQueue[nextIdx];
+            setCurrentIndex(nextIdx);
+            setCurrentTrack(nextTrk);
+            if (isPlaying) {
+              audioEngine.loadTrack(nextTrk, true);
+            } else {
+              audioEngine.loadTrack(nextTrk, false);
+            }
+          }
+        } else if (idx < currentIndex) {
+          setCurrentIndex((ci) => Math.max(0, ci - 1));
+        }
+
+        return nextQueue;
+      });
+    },
+    [currentTrack?.id, currentIndex, isPlaying]
+  );
+
+  const handleRemoveFromApp = useCallback(
+    (track: Track) => {
+      const isaiAndroid = (window as any).IsaiAndroid;
+      if (isaiAndroid?.removeTrackFromApp) {
+        isaiAndroid.removeTrackFromApp(track.id, track.nativeUri || track.uri || '');
+      }
+      removeTrackFromLocalState(track.id);
+      showToast(`Removed "${track.title}" from Isai`);
+    },
+    [removeTrackFromLocalState, showToast]
+  );
+
+  const handleDeleteFromDevice = useCallback(
+    (track: Track) => {
+      const isaiAndroid = (window as any).IsaiAndroid;
+      const targetUri = track.nativeUri || track.uri || '';
+      if (isaiAndroid?.deleteTrackFromDevice && targetUri && !targetUri.startsWith('blob:')) {
+        isaiAndroid.deleteTrackFromDevice(track.id, targetUri);
+      } else {
+        removeTrackFromLocalState(track.id);
+        showToast(`Deleted "${track.title}"`);
+      }
+    },
+    [removeTrackFromLocalState, showToast]
+  );
+
+  // Refs for stable window native callbacks (never miss scans even across React re-renders!)
+  const isTrackExcludedRef = useRef(isTrackExcluded);
+  isTrackExcludedRef.current = isTrackExcluded;
+
+  const handlePlayTrackRef = useRef(handlePlayTrack);
+  handlePlayTrackRef.current = handlePlayTrack;
+
+  const removeTrackRef = useRef(removeTrackFromLocalState);
+  removeTrackRef.current = removeTrackFromLocalState;
+
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+
+  // Bind Android Native Bridge listeners once for the lifetime of the app
+  useEffect(() => {
+    const mapRawAndroidTracks = (rawTracks: any[], fallbackFolder: string, folderId: string): Track[] => {
+      return rawTracks.map((raw) => ({
+        id: raw.id || `android-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        uri: raw.streamUrl || raw.uri,
+        nativeUri: raw.uri,
+        title: raw.title || 'Audio Track',
+        artist: raw.artist || 'Unknown Artist',
+        album: raw.album || fallbackFolder,
+        artPath: raw.artPath || undefined,
+        durationMs: raw.durationMs || 180000,
+        mimeType: raw.mimeType || 'audio/mpeg',
+        sizeBytes: raw.sizeBytes,
+        dateAdded: Date.now(),
+        isFavorite: false,
+        hasLyrics: false,
+        isCustomFile: true,
+        folderPath: raw.folderPath || `${fallbackFolder}/${raw.title}`,
+        folderId,
+      }));
+    };
+
+    (window as any).__isaiOnScanProgress = (scanning: boolean, message: string) => {
+      setScanStatus({ scanning: Boolean(scanning), message: message || '' });
+    };
+
+    (window as any).__isaiOnScanEmpty = (folderName: string) => {
+      setScanStatus({ scanning: false, message: '' });
+      showToastRef.current(`No audio tracks found in "${folderName}"`);
+    };
+
+    (window as any).__isaiOnTrackDeleted = (trackId: string, deleted: boolean, errMsg?: string) => {
+      if (deleted) {
+        removeTrackRef.current(trackId);
+        showToastRef.current('Track permanently deleted from device');
+      } else {
+        showToastRef.current(errMsg || 'Delete cancelled or permission denied');
+      }
+    };
+
+    (window as any).__isaiOnFolderImported = (folderName: string, rawTracks: any[], customFolderId?: string) => {
+      setScanStatus({ scanning: false, message: '' });
+      if (!rawTracks || rawTracks.length === 0) {
+        showToastRef.current(`No audio tracks found in "${folderName}"`);
+        return;
+      }
+
+      const folderId =
+        customFolderId || `folder-${folderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+      const newTracks = deduplicateTracks(mapRawAndroidTracks(rawTracks, folderName, folderId));
+
+      setTracks((prev) => deduplicateTracks([...newTracks, ...prev]));
+      const playable = newTracks.filter((t) => !isTrackExcludedRef.current(t));
       if (playable.length > 0) {
-        setQueue((prev) => [...playable, ...prev]);
-        handlePlayTrack(playable[0], playable);
+        setQueue((prev) => deduplicateTracks([...playable, ...prev]));
+        handlePlayTrackRef.current(playable[0], playable);
       }
 
       setFolders((prevFolders) => {
         const existing = prevFolders.find((f) => f.id === folderId);
         if (existing) {
           return prevFolders.map((f) =>
-            f.id === existing.id
-              ? { ...f, trackCount: f.trackCount + newTracks.length }
-              : f
+            f.id === existing.id ? { ...f, name: folderName, trackCount: newTracks.length } : f
           );
         }
         return [
@@ -346,60 +622,65 @@ export default function App() {
 
       setSelectedFolderId(folderId);
       setActiveTab('folders');
+      showToastRef.current(`Loaded ${newTracks.length} track${newTracks.length === 1 ? '' : 's'} from ${folderName}`);
     };
 
     (window as any).__isaiOnTracksImported = (rawTracks: any[]) => {
+      setScanStatus({ scanning: false, message: '' });
       if (!rawTracks || rawTracks.length === 0) return;
       const folderName = 'Imported Tracks';
       const folderId = 'folder-imported-tracks';
-      const newTracks: Track[] = rawTracks.map((raw) => {
-        const waveform = Array.from({ length: 60 }, () =>
-          Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
-        );
-        return {
-          id: raw.id || `android-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          uri: raw.streamUrl || raw.uri,
-          nativeUri: raw.uri,
-          title: raw.title || 'Audio Track',
-          artist: raw.artist || 'Local Artist',
-          album: raw.album || folderName,
-          artPath: raw.artPath || undefined,
-          durationMs: raw.durationMs || 180000,
-          mimeType: raw.mimeType || 'audio/mpeg',
-          sizeBytes: raw.sizeBytes,
-          dateAdded: Date.now(),
-          isFavorite: false,
-          hasLyrics: false,
-          waveform,
-          isCustomFile: true,
-          folderPath: raw.folderPath || `${folderName}/${raw.title}`,
-          folderId,
-        };
-      });
+      const newTracks = deduplicateTracks(mapRawAndroidTracks(rawTracks, folderName, folderId));
 
-      setTracks((prev) => [...newTracks, ...prev]);
-      const playable = newTracks.filter((t) => !isTrackExcluded(t));
+      setTracks((prev) => deduplicateTracks([...newTracks, ...prev]));
+      const playable = newTracks.filter((t) => !isTrackExcludedRef.current(t));
       if (playable.length > 0) {
-        setQueue((prev) => [...playable, ...prev]);
-        handlePlayTrack(playable[0], playable);
+        setQueue((prev) => deduplicateTracks([...playable, ...prev]));
+        handlePlayTrackRef.current(playable[0], playable);
       }
+      showToastRef.current(`Added ${newTracks.length} track${newTracks.length === 1 ? '' : 's'}`);
     };
 
     return () => {
+      delete (window as any).__isaiOnScanProgress;
+      delete (window as any).__isaiOnScanEmpty;
+      delete (window as any).__isaiOnTrackDeleted;
       delete (window as any).__isaiOnFolderImported;
       delete (window as any).__isaiOnTracksImported;
     };
-  }, [isTrackExcluded]);
+  }, []);
 
-  // Audio Engine Callbacks
+  // Track ending callback handler
+  const handleTrackEnd = useCallback(() => {
+    if (isStopAtEndOfTrack) {
+      audioEngine.pause();
+      setIsPlaying(false);
+      setIsLifted(true);
+      setIsStopAtEndOfTrack(false);
+      return;
+    }
+
+    if (repeatMode === 'ONE') {
+      audioEngine.seek(0);
+      audioEngine.play();
+      return;
+    }
+
+    if (currentIndex < queue.length - 1) {
+      playTrackAtIndex(currentIndex + 1);
+    } else if (repeatMode === 'ALL') {
+      playTrackAtIndex(0);
+    } else {
+      audioEngine.pause();
+      setIsPlaying(false);
+      setIsLifted(true);
+    }
+  }, [isStopAtEndOfTrack, repeatMode, currentIndex, queue.length, playTrackAtIndex]);
+
+  const handleTrackEndRef = useRef(handleTrackEnd);
+  handleTrackEndRef.current = handleTrackEnd;
+
   useEffect(() => {
-    audioEngine.onProgress((cur, dur) => {
-      setCurrentTime(cur);
-      if (dur && isFinite(dur) && dur > 0) {
-        setDuration(dur);
-      }
-    });
-
     audioEngine.onStateChange((playing) => {
       setIsPlaying(playing);
       if (playing) {
@@ -408,9 +689,9 @@ export default function App() {
     });
 
     audioEngine.onEnded(() => {
-      handleTrackEnd();
+      handleTrackEndRef.current();
     });
-  }, [queue, currentIndex, repeatMode, isStopAtEndOfTrack]);
+  }, []);
 
   // Sleep Timer countdown
   useEffect(() => {
@@ -439,71 +720,7 @@ export default function App() {
     };
   }, [sleepTimerRemainingMs]);
 
-  // Play track at queue index
-  const playTrackAtIndex = useCallback(
-    async (index: number) => {
-      if (index < 0 || index >= queue.length) return;
-      const track = queue[index];
-      setCurrentIndex(index);
-      setCurrentTrack(track);
-      setCurrentTime(0);
-      setDuration(track.durationMs / 1000);
-
-      // Analog vinyl needle drop click effect
-      audioEngine.playNeedleDropSound();
-      setIsLifted(false);
-      await audioEngine.loadTrack(track, true);
-      setIsPlaying(true);
-    },
-    [queue]
-  );
-
-  // Play a specific track (immediately opens NowPlaying stage)
-  const handlePlayTrack = useCallback(
-    (track: Track, newQueue?: Track[]) => {
-      const q = newQueue || tracks;
-      const idx = q.findIndex((t) => t.id === track.id);
-      setQueue(q);
-      if (idx !== -1) {
-        playTrackAtIndex(idx);
-      } else {
-        setQueue([track, ...q]);
-        playTrackAtIndex(0);
-      }
-      setIsNowPlayingOpen(true);
-    },
-    [tracks, playTrackAtIndex]
-  );
-
-  // Handle track ending
-  const handleTrackEnd = () => {
-    if (isStopAtEndOfTrack) {
-      audioEngine.pause();
-      setIsPlaying(false);
-      setIsLifted(true);
-      setIsStopAtEndOfTrack(false);
-      return;
-    }
-
-    if (repeatMode === 'ONE') {
-      audioEngine.seek(0);
-      audioEngine.play();
-      return;
-    }
-
-    if (currentIndex < queue.length - 1) {
-      playTrackAtIndex(currentIndex + 1);
-    } else if (repeatMode === 'ALL') {
-      playTrackAtIndex(0);
-    } else {
-      audioEngine.pause();
-      setIsPlaying(false);
-      setIsLifted(true);
-    }
-  };
-
-  // Play / Pause toggle
-  const handleTogglePlay = () => {
+  const handleTogglePlay = useCallback(() => {
     if (!currentTrack) {
       if (tracks.length > 0) {
         handlePlayTrack(tracks[0]);
@@ -516,7 +733,6 @@ export default function App() {
       setIsPlaying(false);
       if (settings.liftBehavior === 'stop') {
         audioEngine.seek(0);
-        setCurrentTime(0);
       }
       setIsLifted(true);
     } else {
@@ -525,39 +741,35 @@ export default function App() {
       audioEngine.play();
       setIsPlaying(true);
     }
-  };
+  }, [currentTrack, tracks, isPlaying, settings.liftBehavior, handlePlayTrack]);
 
-  const handlePrevious = () => {
-    if (currentTime > 3) {
+  const handlePrevious = useCallback(() => {
+    if (audioEngine.getCurrentTime() > 3) {
       audioEngine.seek(0);
-      setCurrentTime(0);
     } else if (currentIndex > 0) {
       playTrackAtIndex(currentIndex - 1);
     } else if (repeatMode === 'ALL') {
       playTrackAtIndex(queue.length - 1);
     }
-  };
+  }, [currentIndex, repeatMode, queue.length, playTrackAtIndex]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (currentIndex < queue.length - 1) {
       playTrackAtIndex(currentIndex + 1);
     } else if (repeatMode === 'ALL') {
       playTrackAtIndex(0);
     }
-  };
+  }, [currentIndex, queue.length, repeatMode, playTrackAtIndex]);
 
-  const handleSeek = (seconds: number) => {
-    setCurrentTime(seconds);
+  const handleSeek = useCallback((seconds: number) => {
     audioEngine.seek(seconds);
-  };
+  }, []);
 
-  const handleSeekProgress = (fraction: number) => {
-    const target = fraction * (duration || 1);
-    setCurrentTime(target);
+  const handleSeekProgress = useCallback((fraction: number) => {
     audioEngine.seekProgress(fraction);
-  };
+  }, []);
 
-  const handleToggleShuffle = () => {
+  const handleToggleShuffle = useCallback(() => {
     if (!isShuffled) {
       const current = queue[currentIndex];
       const remaining = queue.filter((_, i) => i !== currentIndex);
@@ -574,53 +786,33 @@ export default function App() {
       }
       setIsShuffled(false);
     }
-  };
+  }, [isShuffled, queue, currentIndex, tracks, currentTrack]);
 
-  const handleCycleRepeat = () => {
+  const handleCycleRepeat = useCallback(() => {
     const modes: RepeatMode[] = ['OFF', 'ALL', 'ONE'];
     const nextIdx = (modes.indexOf(repeatMode) + 1) % modes.length;
     setRepeatMode(modes[nextIdx]);
-  };
+  }, [repeatMode]);
 
-  const handleToggleFavorite = (trackId?: string) => {
-    const id = trackId || currentTrack?.id;
-    if (!id) return;
+  const handleToggleFavorite = useCallback(
+    (trackId?: string) => {
+      const id = trackId || currentTrack?.id;
+      if (!id) return;
 
-    setTracks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isFavorite: !t.isFavorite } : t))
-    );
-    setQueue((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isFavorite: !t.isFavorite } : t))
-    );
-    if (currentTrack && currentTrack.id === id) {
-      setCurrentTrack((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : null));
-    }
-  };
+      setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, isFavorite: !t.isFavorite } : t)));
+      setQueue((prev) => prev.map((t) => (t.id === id ? { ...t, isFavorite: !t.isFavorite } : t)));
+      if (currentTrack && currentTrack.id === id) {
+        setCurrentTrack((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : null));
+      }
+    },
+    [currentTrack]
+  );
 
-  const handleToggleRpm = () => {
-    const nextRpm = settings.rpm === 33 ? 45 : 33;
-    setSettings((prev) => ({ ...prev, rpm: nextRpm }));
-  };
+  const handleToggleRpm = useCallback(() => {
+    setSettings((prev) => ({ ...prev, rpm: prev.rpm === 33 ? 45 : 33 }));
+  }, []);
 
-  // Play All or Shuffle All buttons in Samsung Music subheader
-  const handlePlayAll = () => {
-    if (filteredTracks.length > 0) {
-      handlePlayTrack(filteredTracks[0], filteredTracks);
-    }
-  };
-
-  const handleShuffleAll = () => {
-    if (filteredTracks.length > 0) {
-      const shuffled = [...filteredTracks].sort(() => Math.random() - 0.5);
-      setQueue(shuffled);
-      setCurrentIndex(0);
-      playTrackAtIndex(0);
-      setIsShuffled(true);
-      setIsNowPlayingOpen(true);
-    }
-  };
-
-  // Import local audio files directly from user device storage
+  // Import local audio files in web browser mode
   const handleProcessAudioFiles = async (
     fileList: FileList | File[],
     overrideFolderName?: string
@@ -634,7 +826,6 @@ export default function App() {
 
     if (audioFiles.length === 0) return;
 
-    // Detect folder name from webkitRelativePath or fallback to Music Tracks
     let detectedFolderName = overrideFolderName || '';
     const firstRelPath = (audioFiles[0] as unknown as { webkitRelativePath?: string })?.webkitRelativePath;
     if (!overrideFolderName && firstRelPath && firstRelPath.includes('/')) {
@@ -646,19 +837,13 @@ export default function App() {
 
     const folderId = `folder-${detectedFolderName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
 
-    const newTracks: Track[] = [];
-
-    for (const file of audioFiles) {
+    const newTracks: Track[] = audioFiles.map((file) => {
       const uri = URL.createObjectURL(file);
       const title = file.name.replace(/\.[^/.]+$/, '').replace(/^[0-9\s._-]+/, '');
       const relPath = (file as unknown as { webkitRelativePath?: string })?.webkitRelativePath || detectedFolderName;
 
-      const waveform = Array.from({ length: 60 }, () =>
-        Math.max(0.1, Math.min(0.95, 0.2 + Math.random() * 0.7))
-      );
-
-      const track: Track = {
-        id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      return {
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         uri,
         title: title || 'Local Audio Track',
         artist: 'Unknown Artist',
@@ -669,28 +854,23 @@ export default function App() {
         dateAdded: Date.now(),
         isFavorite: false,
         hasLyrics: false,
-        waveform,
         isCustomFile: true,
         folderPath: relPath,
         folderId,
       };
+    });
 
-      newTracks.push(track);
-    }
+    const dedupedNew = deduplicateTracks(newTracks);
+    setTracks((prev) => deduplicateTracks([...dedupedNew, ...prev]));
+    setQueue((prev) => deduplicateTracks([...dedupedNew, ...prev]));
 
-    setTracks((prev) => [...newTracks, ...prev]);
-    setQueue((prev) => [...newTracks, ...prev]);
-
-    // Register folder in directories list
     setFolders((prevFolders) => {
       const existing = prevFolders.find(
         (f) => f.id === folderId || f.name.toLowerCase() === detectedFolderName.toLowerCase()
       );
       if (existing) {
         return prevFolders.map((f) =>
-          f.id === existing.id
-            ? { ...f, trackCount: f.trackCount + newTracks.length }
-            : f
+          f.id === existing.id ? { ...f, trackCount: dedupedNew.length } : f
         );
       }
       return [
@@ -698,18 +878,17 @@ export default function App() {
           id: folderId,
           name: detectedFolderName,
           path: detectedFolderName,
-          trackCount: newTracks.length,
+          trackCount: dedupedNew.length,
           addedAt: Date.now(),
         },
         ...prevFolders,
       ];
     });
 
-    // Automatically navigate to this folder and start running/playing it!
     setSelectedFolderId(folderId);
     setActiveTab('folders');
-    if (newTracks.length > 0) {
-      handlePlayTrack(newTracks[0], newTracks);
+    if (dedupedNew.length > 0) {
+      handlePlayTrack(dedupedNew[0], dedupedNew);
       setIsNowPlayingOpen(true);
     }
   };
@@ -735,7 +914,6 @@ export default function App() {
     }
   };
 
-  // Selected folder and synced track counts per directory
   const selectedFolder = useMemo(() => {
     return folders.find((f) => f.id === selectedFolderId) || null;
   }, [folders, selectedFolderId]);
@@ -762,17 +940,15 @@ export default function App() {
     }
   };
 
-  // Filter & sort tracks
+  // Filter & sort tracks (auto-deduplicated)
   const filteredTracks = useMemo(() => {
-    let list = tracks.filter((t) => {
-      // Exclude call recordings and user-defined prefixes
-      if (isTrackExcluded(t)) return false;
-
+    let list = nonExcludedTracks.filter((t) => {
+      const q = searchQuery.toLowerCase();
       const matchSearch =
-        !searchQuery ||
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.artist.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.album.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        t.title.toLowerCase().includes(q) ||
+        t.artist.toLowerCase().includes(q) ||
+        t.album.toLowerCase().includes(q);
 
       if (!matchSearch) return false;
 
@@ -808,8 +984,7 @@ export default function App() {
 
     return list;
   }, [
-    tracks,
-    isTrackExcluded,
+    nonExcludedTracks,
     searchQuery,
     activeTab,
     selectedAlbum,
@@ -819,7 +994,22 @@ export default function App() {
     sortOrder,
   ]);
 
-  // Grouped albums (excluding call recordings/filtered prefixes)
+  const handlePlayAll = useCallback(() => {
+    if (filteredTracks.length > 0) {
+      handlePlayTrack(filteredTracks[0], filteredTracks);
+    }
+  }, [filteredTracks, handlePlayTrack]);
+
+  const handleShuffleAll = useCallback(() => {
+    if (filteredTracks.length > 0) {
+      const shuffled = [...filteredTracks].sort(() => Math.random() - 0.5);
+      setQueue(shuffled);
+      setIsShuffled(true);
+      playTrackAtIndex(0, shuffled);
+      setIsNowPlayingOpen(true);
+    }
+  }, [filteredTracks, playTrackAtIndex]);
+
   const albums = useMemo<Album[]>(() => {
     const map = new Map<string, Track[]>();
     for (const t of nonExcludedTracks) {
@@ -838,7 +1028,6 @@ export default function App() {
     }));
   }, [nonExcludedTracks]);
 
-  // Grouped artists (excluding call recordings/filtered prefixes)
   const artists = useMemo<Artist[]>(() => {
     const map = new Map<string, Track[]>();
     for (const t of nonExcludedTracks) {
@@ -855,7 +1044,92 @@ export default function App() {
     }));
   }, [nonExcludedTracks]);
 
-  const progress = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
+  // Horizontal Swipe Touch Handlers across entire library <main>
+  const handleMainTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    swipeStartRef.current = {
+      x: t.clientX,
+      y: t.clientY,
+      time: performance.now(),
+      lockedAxis: null,
+      lastDx: 0,
+    };
+    if (swipeContentRef.current) {
+      swipeContentRef.current.style.transition = 'none';
+    }
+  };
+
+  const handleMainTouchMove = (e: React.TouchEvent<HTMLElement>) => {
+    const start = swipeStartRef.current;
+    if (!start || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    if (!start.lockedAxis) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx)) {
+        start.lockedAxis = 'y';
+        return;
+      }
+      if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        start.lockedAxis = 'x';
+      } else {
+        return;
+      }
+    }
+
+    if (start.lockedAxis === 'x') {
+      start.lastDx = dx;
+      const curIdx = TAB_IDS.indexOf(activeTab);
+      const atEdge = (curIdx === 0 && dx > 0) || (curIdx === TAB_IDS.length - 1 && dx < 0);
+      const dampedDx = atEdge ? dx * 0.25 : Math.max(-110, Math.min(110, dx * 0.55));
+      if (swipeContentRef.current) {
+        swipeContentRef.current.style.transform = `translate3d(${dampedDx}px, 0, 0)`;
+      }
+    }
+  };
+
+  const handleMainTouchEnd = () => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+
+    if (swipeContentRef.current) {
+      swipeContentRef.current.style.transition = 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)';
+      swipeContentRef.current.style.transform = 'translate3d(0px, 0, 0)';
+    }
+
+    if (!start || start.lockedAxis !== 'x') return;
+
+    const dt = performance.now() - start.time;
+    const dx = start.lastDx;
+    const isSwipeThresholdMet = Math.abs(dx) > 58 || (Math.abs(dx) > 32 && dt < 240);
+
+    if (!isSwipeThresholdMet) return;
+
+    const curIdx = TAB_IDS.indexOf(activeTab);
+    if (dx < 0 && curIdx < TAB_IDS.length - 1) {
+      setSelectedAlbum(null);
+      setSelectedFolderId(null);
+      setActiveTab(TAB_IDS[curIdx + 1]);
+    } else if (dx > 0 && curIdx > 0) {
+      setSelectedAlbum(null);
+      setSelectedFolderId(null);
+      setActiveTab(TAB_IDS[curIdx - 1]);
+    }
+  };
+
+  const handleTrackRowPlay = useCallback(
+    (track: Track) => {
+      handlePlayTrack(track, filteredTracks);
+    },
+    [handlePlayTrack, filteredTracks]
+  );
+
+  const handleOpenTrackActions = useCallback((track: Track) => {
+    setActionTrack(track);
+    setIsTrackActionOpen(true);
+  }, []);
 
   return (
     <div
@@ -864,7 +1138,7 @@ export default function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* 1. Directory / Folder Picker */}
+      {/* Hidden Web Directory & Audio Pickers */}
       <input
         ref={folderInputRef}
         type="file"
@@ -879,7 +1153,6 @@ export default function App() {
         }}
       />
 
-      {/* 2. Separate Music Tracks Picker */}
       <input
         ref={fileInputRef}
         type="file"
@@ -894,17 +1167,24 @@ export default function App() {
         }}
       />
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-neutral-900 border border-amber-500/40 text-xs font-medium text-white shadow-xl pointer-events-none animate-fadeIn">
+          {toastMessage}
+        </div>
+      )}
+
       {/* Drag & Drop Visual Overlay */}
       {isDragOver && (
-        <div className="fixed inset-0 z-50 bg-black/85 border-4 border-dashed border-amber-500 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center pointer-events-none animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-black/85 border-4 border-dashed border-amber-500 flex flex-col items-center justify-center p-6 text-center pointer-events-none animate-fadeIn">
           <Upload className="w-16 h-16 text-amber-400 mb-3 animate-bounce" />
           <h3 className="text-2xl font-bold text-white">Drop your audio files here</h3>
           <p className="text-sm text-neutral-400 mt-1">Supports MP3, WAV, FLAC, OGG, M4A & AAC</p>
         </div>
       )}
 
-      {/* 1. Samsung Music One UI Top Header (Title on left, Search & Menu on right) */}
-      <header className="flex-shrink-0 bg-[#000000] px-5 pt-10 sm:pt-12 pb-2 z-30">
+      {/* 1. Header */}
+      <header className="flex-shrink-0 bg-[#000000] px-5 pt-4 sm:pt-5 pb-2 z-30">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
           {showSearchInput ? (
             <div className="flex-1 flex items-center gap-2 bg-neutral-900 border border-white/10 rounded-full px-3 py-1.5 animate-fadeIn">
@@ -963,29 +1243,28 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. Samsung Music Category Tabs (Favourites | Playlists | Tracks | Albums | Artists | Folders) */}
+      {/* 2. Category Tabs */}
       <div className="flex-shrink-0 bg-[#000000] px-5 pt-1 pb-2 z-20">
         <div className="max-w-xl mx-auto flex items-center gap-5 overflow-x-auto no-scrollbar pb-1">
-          {[
-            { id: 'favourites', label: 'Favourites' },
-            { id: 'playlists', label: 'Playlists' },
-            { id: 'tracks', label: 'Tracks' },
-            { id: 'albums', label: 'Albums' },
-            { id: 'artists', label: 'Artists' },
-            { id: 'folders', label: 'Folders' },
-          ].map((tab) => {
-            const isActive = activeTab === tab.id && !selectedAlbum && (tab.id !== 'folders' || !selectedFolderId);
+          {CATEGORY_TABS.map((tab) => {
+            const isActive =
+              activeTab === tab.id &&
+              !selectedAlbum &&
+              (tab.id !== 'folders' || !selectedFolderId);
             return (
               <button
                 key={tab.id}
+                ref={(el) => {
+                  tabButtonRefs.current[tab.id] = el;
+                }}
                 onClick={() => {
                   setSelectedAlbum(null);
                   setSelectedFolderId(null);
-                  setActiveTab(tab.id as CategoryTab);
+                  setActiveTab(tab.id);
                 }}
-                className={`whitespace-nowrap transition-all ${
+                className={`whitespace-nowrap transition-colors pb-1 relative ${
                   isActive
-                    ? 'text-lg font-bold text-white relative'
+                    ? 'text-lg font-bold text-white border-b-2 border-amber-500'
                     : 'text-sm font-medium text-neutral-500 hover:text-neutral-300'
                 }`}
               >
@@ -996,15 +1275,14 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. Subheader Bar (Compact Sort on Left, Call Recording Filter Badge, Shuffle All + Play All on Right) */}
+      {/* 3. Subheader Bar */}
       <div className="flex-shrink-0 bg-[#000000] px-5 py-2 z-10">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
-          {/* Compact Sort: Click arrow to toggle asc/desc, click text to cycle criteria */}
           <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-medium min-w-0">
             <button
               onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
               className="p-1 -ml-1 rounded-full hover:bg-white/10 text-neutral-300 hover:text-white transition-colors cursor-pointer active:scale-90 flex items-center justify-center flex-shrink-0"
-              title={sortOrder === 'asc' ? 'Ascending (tap to switch to Descending)' : 'Descending (tap to switch to Ascending)'}
+              title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
             >
               {sortOrder === 'asc' ? (
                 <ArrowUp className="w-3.5 h-3.5 text-amber-400" />
@@ -1024,12 +1302,11 @@ export default function App() {
               {sortBy === 'date' ? 'Date added' : sortBy === 'title' ? 'Name' : 'Artist'}
             </button>
 
-            {/* Subtle Call Recording Filter Pill */}
             {settings.excludePrefixesEnabled && excludedTracks.length > 0 && (
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="hidden sm:inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-mono border border-amber-500/20 transition-colors cursor-pointer truncate"
-                title={`Excluding ${excludedTracks.length} tracks starting with "${(settings.excludePrefixes || []).join(', ')}". Click to manage in Settings.`}
+                title={`Excluding ${excludedTracks.length} tracks`}
               >
                 <PhoneOff className="w-2.5 h-2.5 flex-shrink-0" />
                 <span className="truncate">{excludedTracks.length} excluded</span>
@@ -1037,7 +1314,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Shuffle All & Play All Buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {settings.excludePrefixesEnabled && excludedTracks.length > 0 && (
               <button
@@ -1068,96 +1344,110 @@ export default function App() {
         </div>
       </div>
 
-      {/* 4. Main Scrollable Container (Only this section scrolls when browsing tracks!) */}
-      <main className="flex-1 overflow-y-auto px-5 pb-24 max-w-xl w-full mx-auto flex flex-col gap-1">
-        {selectedAlbum && (
-          <div className="flex items-center justify-between py-2 border-b border-white/10 mb-2">
-            <div>
-              <h3 className="text-base font-bold text-white">{selectedAlbum}</h3>
-              <p className="text-xs text-neutral-400">
-                {albums.find((a) => a.title === selectedAlbum)?.artist} · {filteredTracks.length} tracks
-              </p>
-            </div>
-            <button
-              onClick={() => setSelectedAlbum(null)}
-              className="text-xs text-amber-400 hover:underline"
-            >
-              Back
-            </button>
+      {/* Live Scanning Banner */}
+      {scanStatus.scanning && (
+        <div className="flex-shrink-0 px-5 pb-2 max-w-xl w-full mx-auto">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
+            <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+            <span className="truncate">{scanStatus.message || 'Importing music tracks...'}</span>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Selected Folder Drilldown Banner */}
-        {activeTab === 'folders' && selectedFolder && (
-          <div className="flex items-center justify-between py-2 border-b border-white/10 mb-2">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400">
-                <Folder className="w-5 h-5" />
-              </div>
+      {/* 4. Main Scrollable + Swipeable Container */}
+      <main
+        className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-24 max-w-xl w-full mx-auto"
+        onTouchStart={handleMainTouchStart}
+        onTouchMove={handleMainTouchMove}
+        onTouchEnd={handleMainTouchEnd}
+        onTouchCancel={handleMainTouchEnd}
+      >
+        <div ref={swipeContentRef} className="flex flex-col gap-1 min-h-full will-change-transform">
+          {selectedAlbum && (
+            <div className="flex items-center justify-between py-2 border-b border-white/10 mb-2">
               <div>
-                <h3 className="text-base font-bold text-white">{selectedFolder.name}</h3>
+                <h3 className="text-base font-bold text-white">{selectedAlbum}</h3>
                 <p className="text-xs text-neutral-400">
-                  {filteredTracks.length} track{filteredTracks.length !== 1 ? 's' : ''} in directory
+                  {albums.find((a) => a.title === selectedAlbum)?.artist} · {filteredTracks.length} tracks
                 </p>
               </div>
-            </div>
-            <button
-              onClick={() => setSelectedFolderId(null)}
-              className="text-xs text-amber-400 hover:underline font-semibold px-2 py-1"
-            >
-              All Folders
-            </button>
-          </div>
-        )}
-
-        {/* Folders Tab: Directory Overview Grid / List (When no folder is selected) */}
-        {activeTab === 'folders' && !selectedFolderId && (
-          <div className="flex flex-col gap-3 pt-1">
-            {/* Call Recording & Excluded Prefixes Status Banner */}
-            {settings.excludePrefixesEnabled && (settings.excludePrefixes || []).length > 0 && (
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900/60 border border-white/5 text-xs text-neutral-400">
-                <div className="flex items-center gap-2 min-w-0">
-                  <PhoneOff className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                  <span className="truncate">
-                    Call recording filter: avoiding songs starting with{' '}
-                    <strong className="text-amber-300 font-medium">
-                      "{(settings.excludePrefixes || []).join('", "')}"
-                    </strong>
-                    {excludedTracks.length > 0 && (
-                      <span className="text-neutral-500 ml-1">({excludedTracks.length} excluded)</span>
-                    )}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="text-amber-400 hover:text-amber-300 hover:underline font-semibold text-[11px] ml-2 flex-shrink-0 cursor-pointer"
-                >
-                  Configure
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pb-1">
-              <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
-                {foldersWithCounts.length} {foldersWithCounts.length === 1 ? 'Directory' : 'Directories'} Configured
-              </span>
-
               <button
-                onClick={() => setIsAddFolderModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
+                onClick={() => setSelectedAlbum(null)}
+                className="text-xs text-amber-400 hover:underline"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Folder</span>
+                Back
               </button>
             </div>
+          )}
 
-            <div className="flex flex-col gap-2">
-              {foldersWithCounts.map((folder) => {
-                return (
+          {activeTab === 'folders' && selectedFolder && (
+            <div className="flex items-center justify-between py-2 border-b border-white/10 mb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400">
+                  <Folder className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{selectedFolder.name}</h3>
+                  <p className="text-xs text-neutral-400">
+                    {filteredTracks.length} track{filteredTracks.length !== 1 ? 's' : ''} in directory
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedFolderId(null)}
+                className="text-xs text-amber-400 hover:underline font-semibold px-2 py-1"
+              >
+                All Folders
+              </button>
+            </div>
+          )}
+
+          {/* Folders Tab Overview */}
+          {activeTab === 'folders' && !selectedFolderId && (
+            <div className="flex flex-col gap-3 pt-1">
+              {settings.excludePrefixesEnabled && (settings.excludePrefixes || []).length > 0 && (
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900/60 border border-white/5 text-xs text-neutral-400">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PhoneOff className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    <span className="truncate">
+                      Call recording filter: avoiding songs starting with{' '}
+                      <strong className="text-amber-300 font-medium">
+                        &ldquo;{(settings.excludePrefixes || []).join('", "')}&rdquo;
+                      </strong>
+                      {excludedTracks.length > 0 && (
+                        <span className="text-neutral-500 ml-1">({excludedTracks.length} excluded)</span>
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="text-amber-400 hover:text-amber-300 hover:underline font-semibold text-[11px] ml-2 flex-shrink-0 cursor-pointer"
+                  >
+                    Configure
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-xs uppercase tracking-wider font-semibold text-neutral-400">
+                  {foldersWithCounts.length} {foldersWithCounts.length === 1 ? 'Directory' : 'Directories'} Configured
+                </span>
+
+                <button
+                  onClick={() => setIsAddFolderModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Folder</span>
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {foldersWithCounts.map((folder) => (
                   <div
                     key={folder.id}
                     onClick={() => setSelectedFolderId(folder.id)}
-                    className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900/70 hover:bg-neutral-800/80 border border-white/5 transition-all cursor-pointer group active:scale-[0.99]"
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900/70 hover:bg-neutral-800/80 border border-white/5 transition-colors cursor-pointer group active:scale-[0.99]"
                   >
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
                       <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow bg-neutral-800 text-neutral-300 border border-white/10 group-hover:text-amber-400 group-hover:border-amber-500/30 transition-colors">
@@ -1187,242 +1477,220 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-
-            {foldersWithCounts.length === 0 && (
-              <div className="p-6 rounded-2xl bg-neutral-900/40 border border-white/5 text-center flex flex-col items-center gap-3 mt-4">
-                <FolderOpen className="w-10 h-10 text-neutral-600" />
-                <div>
-                  <h4 className="text-sm font-semibold text-neutral-300">No folders added yet</h4>
-                  <p className="text-xs text-neutral-500 mt-1 max-w-xs mx-auto">
-                    Select a folder on your device or pick individual music tracks to play with full turntable audio.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsAddFolderModalOpen(true)}
-                  className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-all shadow-md active:scale-95"
-                >
-                  Select Folder or Tracks
-                </button>
+                ))}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Tracks List (Matching Screenshot 1) */}
-        {(activeTab === 'tracks' || activeTab === 'favourites' || (activeTab === 'folders' && selectedFolderId) || activeTab === 'playlists' || selectedAlbum) && (
-          <>
-            {filteredTracks.length === 0 ? (
-              tracks.length === 0 ? (
-                <div className="py-12 px-4 text-center flex flex-col items-center justify-center gap-4 animate-fadeIn">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-orange-500/20 to-amber-500/10 border border-orange-500/30 flex items-center justify-center shadow-xl">
-                    <Disc className="w-10 h-10 text-orange-400 animate-spin" style={{ animationDuration: '8s' }} />
-                  </div>
-                  <div className="max-w-xs">
-                    <h3 className="text-xl font-bold text-white tracking-tight">Welcome to Isai</h3>
-                    <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                      Access your local music collection directly. Choose your device's Music folder to load your songs, album art, and audio files.
+              {foldersWithCounts.length === 0 && (
+                <div className="p-6 rounded-2xl bg-neutral-900/40 border border-white/5 text-center flex flex-col items-center gap-3 mt-4">
+                  <FolderOpen className="w-10 h-10 text-neutral-600" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-neutral-300">No folders added yet</h4>
+                    <p className="text-xs text-neutral-500 mt-1 max-w-xs mx-auto">
+                      Select a folder on your device or pick individual music tracks to play with full turntable audio.
                     </p>
                   </div>
-
-                  <div className="flex flex-col gap-2.5 w-full max-w-xs mt-2">
-                    <button
-                      onClick={() => {
-                        if ((window as any).IsaiAndroid?.openFolderPicker) {
-                          (window as any).IsaiAndroid.openFolderPicker();
-                        } else {
-                          folderInputRef.current?.click();
-                        }
-                      }}
-                      className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-black text-sm font-bold shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <FolderOpen className="w-4 h-4" />
-                      <span>Select Music Folder</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if ((window as any).IsaiAndroid?.openFilePicker) {
-                          (window as any).IsaiAndroid.openFilePicker();
-                        } else {
-                          fileInputRef.current?.click();
-                        }
-                      }}
-                      className="w-full py-3 px-5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Upload className="w-4 h-4 text-neutral-400" />
-                      <span>Pick Audio Files</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-20 text-center text-neutral-500 text-sm flex flex-col items-center gap-3">
-                  <Music className="w-12 h-12 text-neutral-700" />
-                  <p>No tracks found matching your filter</p>
-                  <div className="flex flex-col sm:flex-row items-center gap-2 mt-2">
-                    <button
-                      onClick={() => {
-                        if ((window as any).IsaiAndroid?.scanAllDeviceAudio) {
-                          (window as any).IsaiAndroid.scanAllDeviceAudio();
-                        } else {
-                          setIsAddFolderModalOpen(true);
-                        }
-                      }}
-                      className="px-5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold shadow-lg transition-transform active:scale-95 cursor-pointer"
-                    >
-                      Scan All Songs on Phone (Including Downloads)
-                    </button>
-                    <button
-                      onClick={() => setIsAddFolderModalOpen(true)}
-                      className="px-4 py-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer"
-                    >
-                      Choose Specific Folder / Files
-                    </button>
-                  </div>
-                </div>
-              )
-            ) : (
-              filteredTracks.map((track, idx) => {
-                const isCurrent = currentTrack?.id === track.id;
-                return (
-                  <div
-                    key={`${track.id}-${idx}`}
-                    onClick={() => handlePlayTrack(track, filteredTracks)}
-                    className="flex items-center justify-between py-2.5 px-2 rounded-2xl hover:bg-neutral-900/60 active:bg-neutral-900 transition-colors cursor-pointer group"
+                  <button
+                    onClick={() => setIsAddFolderModalOpen(true)}
+                    className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-all shadow-md active:scale-95"
                   >
-                    {/* Left: Album Art Cover (Rounded Square matching One UI) */}
-                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                      <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
-                        {track.artPath && (
-                          <img
-                            src={track.artPath}
-                            alt=""
-                            onError={(e) => {
-                              (e.currentTarget as HTMLElement).style.display = 'none';
-                            }}
-                            className="absolute inset-0 w-full h-full object-cover"
-                          />
-                        )}
-                        <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
-                          <Music className="w-5 h-5 text-neutral-300" />
-                        </div>
-                      </div>
+                    Select Folder or Tracks
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-                      {/* Title & Artist */}
-                      <div className="min-w-0 flex-1 pr-2">
-                        <h3 className={`text-sm font-medium truncate ${isCurrent ? 'text-amber-400 font-bold' : 'text-white'}`}>
-                          {track.title}
-                        </h3>
-                        <p className="text-xs text-neutral-400 truncate mt-0.5">
-                          {track.artist}
-                        </p>
-                      </div>
+          {/* Tracks List */}
+          {(activeTab === 'tracks' ||
+            activeTab === 'favourites' ||
+            (activeTab === 'folders' && selectedFolderId) ||
+            activeTab === 'playlists' ||
+            selectedAlbum) && (
+            <>
+              {filteredTracks.length === 0 ? (
+                tracks.length === 0 ? (
+                  <div className="py-12 px-4 text-center flex flex-col items-center justify-center gap-4 animate-fadeIn">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-orange-500/20 to-amber-500/10 border border-orange-500/30 flex items-center justify-center shadow-xl">
+                      <Disc className="w-10 h-10 text-orange-400" />
+                    </div>
+                    <div className="max-w-xs">
+                      <h3 className="text-xl font-bold text-white tracking-tight">Welcome to Isai</h3>
+                      <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                        Access your local music collection directly. Choose your device&apos;s Music folder or scan all songs on your phone.
+                      </p>
                     </div>
 
-                    {/* Right: Three Dots Action Menu */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setInspectTrack(track);
-                        setIsTrackInfoOpen(true);
-                      }}
-                      className="p-2 -mr-1 rounded-full text-neutral-500 hover:text-white transition-colors"
-                      title="More options"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </>
-        )}
+                    <div className="flex flex-col gap-2.5 w-full max-w-xs mt-2">
+                      <button
+                        onClick={() => {
+                          if ((window as any).IsaiAndroid?.scanAllDeviceAudio) {
+                            (window as any).IsaiAndroid.scanAllDeviceAudio();
+                          } else {
+                            folderInputRef.current?.click();
+                          }
+                        }}
+                        className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-black text-sm font-bold shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Music className="w-4 h-4" />
+                        <span>Scan All Songs on Phone</span>
+                      </button>
 
-        {/* Albums Tab (2-Column Large Square Grid Matching Screenshot 2) */}
-        {activeTab === 'albums' && !selectedAlbum && (
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            {albums.map((album) => (
-              <div
-                key={album.id}
-                onClick={() => setSelectedAlbum(album.title)}
-                className="flex flex-col gap-2 cursor-pointer group"
-              >
-                {/* Large Square Rounded Artwork */}
-                <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-neutral-900 border border-white/5 shadow-md">
-                  {album.artPath && (
-                    <img
-                      src={album.artPath}
-                      alt=""
-                      onError={(e) => {
-                        (e.currentTarget as HTMLElement).style.display = 'none';
-                      }}
-                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  )}
-                  <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
-                    <Music className="w-10 h-10" />
+                      <button
+                        onClick={() => {
+                          if ((window as any).IsaiAndroid?.openFolderPicker) {
+                            (window as any).IsaiAndroid.openFolderPicker();
+                          } else {
+                            folderInputRef.current?.click();
+                          }
+                        }}
+                        className="w-full py-3 px-5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <FolderOpen className="w-4 h-4 text-amber-400" />
+                        <span>Select Music Folder</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if ((window as any).IsaiAndroid?.openFilePicker) {
+                            (window as any).IsaiAndroid.openFilePicker();
+                          } else {
+                            fileInputRef.current?.click();
+                          }
+                        }}
+                        className="w-full py-3 px-5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4 text-neutral-400" />
+                        <span>Pick Audio Files</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-20 text-center text-neutral-500 text-sm flex flex-col items-center gap-3">
+                    <Music className="w-12 h-12 text-neutral-700" />
+                    <p>No tracks found matching your filter</p>
+                    <div className="flex flex-col sm:flex-row items-center gap-2 mt-2">
+                      <button
+                        onClick={() => {
+                          if ((window as any).IsaiAndroid?.scanAllDeviceAudio) {
+                            (window as any).IsaiAndroid.scanAllDeviceAudio();
+                          } else {
+                            setIsAddFolderModalOpen(true);
+                          }
+                        }}
+                        className="px-5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold shadow-lg transition-transform active:scale-95 cursor-pointer"
+                      >
+                        Scan All Songs on Phone (Including Downloads)
+                      </button>
+                      <button
+                        onClick={() => setIsAddFolderModalOpen(true)}
+                        className="px-4 py-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-xs font-semibold text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                      >
+                        Choose Specific Folder / Files
+                      </button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                filteredTracks.map((track) => (
+                  <TrackRow
+                    key={track.id}
+                    track={track}
+                    isCurrent={currentTrack?.id === track.id}
+                    onPlay={handleTrackRowPlay}
+                    onOpenActions={handleOpenTrackActions}
+                  />
+                ))
+              )}
+            </>
+          )}
+
+          {/* Albums Tab */}
+          {activeTab === 'albums' && !selectedAlbum && (
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              {albums.map((album) => (
+                <div
+                  key={album.id}
+                  onClick={() => setSelectedAlbum(album.title)}
+                  className="flex flex-col gap-2 cursor-pointer group"
+                >
+                  <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-neutral-900 border border-white/5 shadow-md">
+                    {album.artPath && (
+                      <img
+                        src={album.artPath}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    )}
+                    <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+                      <Music className="w-10 h-10" />
+                    </div>
+                  </div>
+
+                  <div className="min-w-0 px-1">
+                    <h4 className="text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors">
+                      {album.title}
+                    </h4>
+                    <p className="text-xs text-neutral-400 truncate mt-0.5">
+                      {album.artist} | {album.trackCount} track{album.trackCount > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="min-w-0 px-1">
-                  <h4 className="text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors">
-                    {album.title}
-                  </h4>
-                  <p className="text-xs text-neutral-400 truncate mt-0.5">
-                    {album.artist} | {album.trackCount} track{album.trackCount > 1 ? 's' : ''}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Artists Tab */}
-        {activeTab === 'artists' && (
-          <div className="space-y-1 pt-1">
-            {artists.map((artist) => (
-              <div
-                key={artist.id}
-                onClick={() => {
-                  setSearchQuery(artist.name);
-                  setActiveTab('tracks');
-                }}
-                className="flex items-center gap-3.5 py-2.5 px-2 rounded-2xl hover:bg-neutral-900/60 cursor-pointer"
-              >
-                <div className="relative w-12 h-12 rounded-full overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
-                  {artist.artPath && (
-                    <img
-                      src={artist.artPath}
-                      alt=""
-                      onError={(e) => {
-                        (e.currentTarget as HTMLElement).style.display = 'none';
-                      }}
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                  )}
-                  <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
-                    <Music className="w-5 h-5" />
+          {/* Artists Tab */}
+          {activeTab === 'artists' && (
+            <div className="space-y-1 pt-1">
+              {artists.map((artist) => (
+                <div
+                  key={artist.id}
+                  onClick={() => {
+                    setSearchQuery(artist.name);
+                    setActiveTab('tracks');
+                  }}
+                  className="track-row-opt flex items-center gap-3.5 py-2.5 px-2 rounded-2xl hover:bg-neutral-900/60 cursor-pointer"
+                >
+                  <div className="relative w-12 h-12 rounded-full overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 flex items-center justify-center">
+                    {artist.artPath && (
+                      <img
+                        src={artist.artPath}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    )}
+                    <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-neutral-400">
+                      <Music className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-semibold text-white truncate">{artist.name}</h4>
+                    <p className="text-xs text-neutral-400">
+                      {artist.trackCount} track{artist.trackCount > 1 ? 's' : ''} · {artist.albumCount} album
+                      {artist.albumCount > 1 ? 's' : ''}
+                    </p>
                   </div>
                 </div>
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-white truncate">{artist.name}</h4>
-                  <p className="text-xs text-neutral-400">
-                    {artist.trackCount} track{artist.trackCount > 1 ? 's' : ''} · {artist.albumCount} album{artist.albumCount > 1 ? 's' : ''}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </main>
 
-      {/* Floating Pill MiniPlayer at the Bottom */}
+      {/* Floating Pill MiniPlayer */}
       <MiniPlayer
         currentTrack={currentTrack}
         isPlaying={isPlaying}
-        progress={progress}
         onTogglePlay={handleTogglePlay}
         onPrevious={handlePrevious}
         onNext={handleNext}
@@ -1431,14 +1699,11 @@ export default function App() {
         onOpenQueue={() => setIsQueueOpen(true)}
       />
 
-      {/* Fullscreen Now Playing Stage View (Vinyl Turntable, Tonearm, Synced Lyrics) */}
+      {/* Fullscreen Now Playing Stage */}
       {isNowPlayingOpen && (
         <NowPlayingView
           currentTrack={currentTrack}
           isPlaying={isPlaying}
-          progress={progress}
-          currentTime={currentTime}
-          duration={duration}
           volume={volume}
           repeatMode={repeatMode}
           isShuffled={isShuffled}
@@ -1454,7 +1719,10 @@ export default function App() {
           onToggleShuffle={handleToggleShuffle}
           onCycleRepeat={handleCycleRepeat}
           onToggleFavorite={() => handleToggleFavorite()}
-          onSetVolume={setVolume}
+          onSetVolume={(v) => {
+            setVolume(v);
+            audioEngine.setVolume(v);
+          }}
           onSetPlaybackRate={(rate) => audioEngine.setPlaybackRate(rate)}
           onToggleRpm={handleToggleRpm}
           onCollapse={() => setIsNowPlayingOpen(false)}
@@ -1521,7 +1789,7 @@ export default function App() {
             name,
             referenceGainsDb: [
               gains[0], gains[0], gains[1], gains[1], gains[2],
-              gains[2], gains[3], gains[3], gains[4], gains[4]
+              gains[2], gains[3], gains[3], gains[4], gains[4],
             ],
             isCustom: true,
           };
@@ -1562,18 +1830,26 @@ export default function App() {
         }}
       />
 
-      {/* Track Metadata Info Modal */}
+      {/* Track Removal Action Modal (Opened from Track List 3-dots) */}
+      <TrackActionModal
+        track={actionTrack}
+        isOpen={isTrackActionOpen}
+        onClose={() => setIsTrackActionOpen(false)}
+        onRemoveFromApp={handleRemoveFromApp}
+        onDeleteFromDevice={handleDeleteFromDevice}
+      />
+
+      {/* Track Metadata Info Modal (Opened from NowPlaying header menu) */}
       <TrackInfoModal
         track={inspectTrack}
         isOpen={isTrackInfoOpen}
         onClose={() => setIsTrackInfoOpen(false)}
       />
 
-      {/* Add Music Modal (Strictly 2 Options: Select Folder & Select Separate Music Tracks) */}
+      {/* Add Music Modal */}
       {isAddFolderModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 animate-fadeIn">
           <div className="w-full max-w-md rounded-3xl bg-[#141419] border border-white/10 shadow-2xl p-6 flex flex-col gap-5 text-neutral-200">
-            {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-white/5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -1592,9 +1868,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Selection Options - 3 Clear Options */}
             <div className="flex flex-col gap-3">
-              {/* Option 1: Scan All Songs on Phone (Recommended - Bypass Android 11+ Downloads folder restrictions) */}
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
@@ -1604,9 +1878,9 @@ export default function App() {
                     folderInputRef.current?.click();
                   }
                 }}
-                className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/10 hover:from-amber-500/30 hover:to-orange-500/20 border border-amber-500/50 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99] shadow-lg shadow-amber-500/10"
+                className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 to-orange-500/10 hover:from-amber-500/30 hover:to-orange-500/20 border border-amber-500/50 flex items-start gap-3.5 text-left transition-colors group cursor-pointer active:scale-[0.99] shadow-lg shadow-amber-500/10"
               >
-                <div className="p-2.5 rounded-xl bg-amber-500 text-black flex-shrink-0 group-hover:scale-110 transition-transform">
+                <div className="p-2.5 rounded-xl bg-amber-500 text-black flex-shrink-0">
                   <Music className="w-6 h-6 stroke-[2.5]" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1619,12 +1893,11 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
-                    Instantly scans all audio tracks on your device, including the <strong>Downloads</strong> folder, Music, and SD card, bypassing Android privacy restrictions.
+                    Instantly scans all audio tracks on your device, including the <strong>Downloads</strong> folder, Music, and SD card.
                   </p>
                 </div>
               </button>
 
-              {/* Option 2: Select Folder */}
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
@@ -1634,9 +1907,9 @@ export default function App() {
                     folderInputRef.current?.click();
                   }
                 }}
-                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 hover:border-amber-500/50 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
+                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 hover:border-amber-500/50 flex items-start gap-3.5 text-left transition-colors group cursor-pointer active:scale-[0.99]"
               >
-                <div className="p-2.5 rounded-xl bg-neutral-800 text-amber-400 flex-shrink-0 group-hover:scale-110 transition-transform">
+                <div className="p-2.5 rounded-xl bg-neutral-800 text-amber-400 flex-shrink-0">
                   <Folder className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1649,7 +1922,6 @@ export default function App() {
                 </div>
               </button>
 
-              {/* Option 3: Select Separate Music Tracks */}
               <button
                 onClick={() => {
                   setIsAddFolderModalOpen(false);
@@ -1659,9 +1931,9 @@ export default function App() {
                     fileInputRef.current?.click();
                   }
                 }}
-                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 hover:border-white/20 flex items-start gap-3.5 text-left transition-all group cursor-pointer active:scale-[0.99]"
+                className="p-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 hover:border-white/20 flex items-start gap-3.5 text-left transition-colors group cursor-pointer active:scale-[0.99]"
               >
-                <div className="p-2.5 rounded-xl bg-neutral-800 text-neutral-300 flex-shrink-0 group-hover:scale-110 transition-transform">
+                <div className="p-2.5 rounded-xl bg-neutral-800 text-neutral-300 flex-shrink-0">
                   <Upload className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1669,13 +1941,12 @@ export default function App() {
                     Select Individual Audio Files
                   </span>
                   <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                    Choose specific audio files (MP3, WAV, FLAC, M4A) directly from Downloads or file manager without restrictions.
+                    Choose specific audio files (MP3, WAV, FLAC, M4A) directly from Downloads or file manager.
                   </p>
                 </div>
               </button>
             </div>
 
-            {/* Call Recording & Excluded Prefixes Status */}
             <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs">
               <div className="flex items-center gap-2 text-amber-300 min-w-0">
                 <PhoneOff className="w-4 h-4 text-amber-400 flex-shrink-0" />

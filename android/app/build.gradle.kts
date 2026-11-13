@@ -16,8 +16,8 @@ android {
         applicationId = "com.isai.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10403
-        versionName = "1.4.3"
+        versionCode = 10404
+        versionName = "1.4.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -76,6 +76,7 @@ android {
 dependencies {
     // Core & Lifecycle
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

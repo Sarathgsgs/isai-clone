@@ -22,7 +22,10 @@ class MetadataExtractor @Inject constructor(
      * Extracts audio metadata and embedded artwork from [file], falling back gracefully to
      * filename sanitization when ID3/Vorbis/MP4 tags are missing or corrupt.
      */
-    suspend fun extractTrack(file: DiscoveredFile): TrackEntity = withContext(Dispatchers.IO) {
+    suspend fun extractTrack(
+        file: DiscoveredFile,
+        extractArtworkToDisk: Boolean = true
+    ): TrackEntity = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
         var rawTitle: String? = null
         var rawArtist: String? = null
@@ -61,7 +64,9 @@ class MetadataExtractor @Inject constructor(
             rawTrackNumber = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
             rawDiscNumber = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
             rawDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            embeddedArtBytes = retriever.embeddedPicture
+            if (extractArtworkToDisk) {
+                embeddedArtBytes = retriever.embeddedPicture
+            }
         } catch (e: Exception) {
             // Unreadable tags or unsupported container, proceed with filename fallback
         } finally {
@@ -106,7 +111,7 @@ class MetadataExtractor @Inject constructor(
         val discNo = parseCompoundNumber(rawDiscNumber, default = 1)
         val durationMs = rawDuration?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
 
-        val artPath = if (embeddedArtBytes != null) {
+        val artPath = if (extractArtworkToDisk && embeddedArtBytes != null) {
             artCache.saveEmbeddedArt(file.uriString, embeddedArtBytes)
         } else {
             null

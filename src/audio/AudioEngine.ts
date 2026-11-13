@@ -1,5 +1,7 @@
 import { EqualizerState, Track } from '../types';
 
+export type ProgressListener = (currentTime: number, duration: number) => void;
+
 export class AudioEngine {
   private audioCtx: AudioContext | null = null;
   private audioElement: HTMLAudioElement;
@@ -15,9 +17,13 @@ export class AudioEngine {
   private synthInterval: number | null = null;
   private isSynthPlaying: boolean = false;
   private synthTime: number = 0;
-  private synthDuration: number = 180; // 3 mins default for demo tracks
+  private synthDuration: number = 180; // 3 mins default
 
-  private progressCallback: ((currentTime: number, duration: number) => void) | null = null;
+  private progressCallback: ProgressListener | null = null;
+  private progressListeners = new Set<ProgressListener>();
+  private lastCurrentTime: number = 0;
+  private lastDuration: number = 180;
+
   private endedCallback: (() => void) | null = null;
   private stateChangeCallback: ((isPlaying: boolean) => void) | null = null;
 
@@ -39,8 +45,8 @@ export class AudioEngine {
     this.audioElement.crossOrigin = 'anonymous';
 
     this.audioElement.addEventListener('timeupdate', () => {
-      if (this.progressCallback && this.audioElement.duration) {
-        this.progressCallback(this.audioElement.currentTime, this.audioElement.duration);
+      if (this.audioElement.duration && isFinite(this.audioElement.duration)) {
+        this.emitProgress(this.audioElement.currentTime, this.audioElement.duration);
       }
     });
 
@@ -60,9 +66,9 @@ export class AudioEngine {
 
     if (typeof window !== 'undefined') {
       (window as any).__isaiOnTimeUpdate = (currentMs: number, durMs: number) => {
-        if (this.progressCallback && durMs > 0) {
-          this.progressCallback(currentMs / 1000, durMs / 1000);
-        }
+        const curSec = Math.max(0, (currentMs || 0) / 1000);
+        const durSec = durMs && durMs > 0 ? durMs / 1000 : this.lastDuration;
+        this.emitProgress(curSec, durSec);
       };
 
       (window as any).__isaiOnStateChange = (playing: boolean) => {
@@ -77,6 +83,37 @@ export class AudioEngine {
         }
       };
     }
+  }
+
+  private emitProgress(currentTime: number, duration: number) {
+    this.lastCurrentTime = isFinite(currentTime) && currentTime >= 0 ? currentTime : 0;
+    if (isFinite(duration) && duration > 0) {
+      this.lastDuration = duration;
+    }
+    if (this.progressCallback) {
+      this.progressCallback(this.lastCurrentTime, this.lastDuration);
+    }
+    this.progressListeners.forEach((cb) => {
+      try {
+        cb(this.lastCurrentTime, this.lastDuration);
+      } catch {
+        // Ignore subscriber error
+      }
+    });
+  }
+
+  subscribeProgress(cb: ProgressListener): () => void {
+    this.progressListeners.add(cb);
+    return () => {
+      this.progressListeners.delete(cb);
+    };
+  }
+
+  getProgressSnapshot(): { currentTime: number; duration: number } {
+    return {
+      currentTime: this.lastCurrentTime,
+      duration: this.lastDuration,
+    };
   }
 
   private initAudioNodes() {
@@ -141,6 +178,9 @@ export class AudioEngine {
     this.currentTrack = track;
     this.stopSynth();
 
+    const initialDuration = track.durationMs && track.durationMs > 0 ? track.durationMs / 1000 : 180;
+    this.emitProgress(0, initialDuration);
+
     const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
     if (isaiAndroid?.playTrack) {
       isaiAndroid.playTrack(
@@ -173,7 +213,7 @@ export class AudioEngine {
         await this.audioCtx.resume();
       }
       this.synthTime = 0;
-      this.synthDuration = track.durationMs / 1000;
+      this.synthDuration = initialDuration;
       if (autoplay) {
         this.playSynth();
       }
@@ -200,7 +240,6 @@ export class AudioEngine {
     try {
       await this.audioElement.play();
     } catch {
-      // In case element fails, fall back to procedural synth track
       this.playSynth();
     }
   }
@@ -220,30 +259,28 @@ export class AudioEngine {
   }
 
   seek(seconds: number) {
+    const dur = this.getDuration();
+    const clamped = Math.max(0, dur > 0 ? Math.min(dur, seconds) : seconds);
+    this.emitProgress(clamped, dur);
+
     const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
     if (isaiAndroid?.seekTo) {
-      isaiAndroid.seekTo(Math.round(seconds * 1000));
+      isaiAndroid.seekTo(Math.round(clamped * 1000));
       return;
     }
 
     if (this.currentTrack?.uri.startsWith('synth:') || this.isSynthPlaying) {
-      this.synthTime = Math.max(0, Math.min(this.synthDuration, seconds));
-      if (this.progressCallback) {
-        this.progressCallback(this.synthTime, this.synthDuration);
-      }
-    } else {
-      if (isFinite(seconds) && this.audioElement.duration) {
-        this.audioElement.currentTime = Math.max(0, Math.min(this.audioElement.duration, seconds));
-      }
+      this.synthTime = clamped;
+    } else if (isFinite(clamped) && this.audioElement.duration) {
+      this.audioElement.currentTime = Math.max(0, Math.min(this.audioElement.duration, clamped));
     }
   }
 
   seekProgress(fraction: number) {
     const f = Math.max(0, Math.min(1, fraction));
-    if (this.currentTrack?.uri.startsWith('synth:') || this.isSynthPlaying) {
-      this.seek(f * this.synthDuration);
-    } else if (this.audioElement.duration) {
-      this.seek(f * this.audioElement.duration);
+    const dur = this.getDuration();
+    if (dur > 0) {
+      this.seek(f * dur);
     }
   }
 
@@ -265,47 +302,54 @@ export class AudioEngine {
   }
 
   getCurrentTime(): number {
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.isAndroid?.()) {
+      return this.lastCurrentTime;
+    }
     if (this.currentTrack?.uri.startsWith('synth:') || this.isSynthPlaying) {
       return this.synthTime;
     }
-    return this.audioElement.currentTime || 0;
+    return this.audioElement.currentTime || this.lastCurrentTime || 0;
   }
 
   getDuration(): number {
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.isAndroid?.()) {
+      return this.lastDuration || (this.currentTrack ? this.currentTrack.durationMs / 1000 : 180);
+    }
     if (this.currentTrack?.uri.startsWith('synth:') || this.isSynthPlaying) {
       return this.synthDuration;
     }
-    return this.audioElement.duration || (this.currentTrack ? this.currentTrack.durationMs / 1000 : 0);
+    return this.audioElement.duration || (this.currentTrack ? this.currentTrack.durationMs / 1000 : this.lastDuration);
   }
 
   applyEqualizer(eq: EqualizerState) {
     this.currentEqualizer = eq;
+    const isaiAndroid = typeof window !== 'undefined' ? (window as any).IsaiAndroid : undefined;
+    if (isaiAndroid?.isAndroid?.()) {
+      return; // Native ExoPlayer handles audio directly without WebAudio overhead
+    }
     this.initAudioNodes();
     if (!this.audioCtx) return;
 
     const enabled = eq.enabled;
     const now = this.audioCtx.currentTime;
 
-    // Apply 5 bands
     this.eqFilters.forEach((filter, i) => {
       const gain = enabled ? eq.bandGainsDb[i] || 0 : 0;
       filter.gain.setTargetAtTime(gain, now, 0.05);
     });
 
-    // Apply Bass Boost
     if (this.bassBoostFilter) {
       const bassGain = enabled ? (eq.bassBoost / 100) * 14 : 0;
       this.bassBoostFilter.gain.setTargetAtTime(bassGain, now, 0.05);
     }
 
-    // Apply Virtualizer (Stereo widening)
     if (this.pannerNode) {
-      // Subtle width adjustment
       const width = enabled ? (eq.virtualizer / 100) * 0.4 : 0;
       this.pannerNode.pan.setTargetAtTime(width * 0.2, now, 0.05);
     }
 
-    // Preamp with clipping prevention
     if (this.masterGain) {
       let finalGain = 1.0;
       if (enabled) {
@@ -322,22 +366,23 @@ export class AudioEngine {
     }
   }
 
-  /**
-   * Generates a realistic physical needle drop contact sound effect on vinyl
-   */
   playNeedleDropSound() {
-    this.initAudioNodes();
-    if (!this.audioCtx) return;
     try {
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!this.audioCtx) {
+        this.audioCtx = new AudioContextClass();
+      }
       const ctx = this.audioCtx;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const now = ctx.currentTime;
 
-      // Soft vinyl friction burst
-      const bufferSize = ctx.sampleRate * 0.08;
+      const bufferSize = Math.floor(ctx.sampleRate * 0.06);
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.015));
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.012));
       }
 
       const noise = ctx.createBufferSource();
@@ -349,37 +394,35 @@ export class AudioEngine {
       filter.Q.value = 1.2;
 
       const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
 
       noise.connect(filter);
       filter.connect(gain);
       gain.connect(ctx.destination);
       noise.start(now);
     } catch {
-      // Ignore audio synthesis errors on user gesture lock
+      // Ignore audio synthesis errors
     }
   }
 
   private lastScratchSoundTime: number = 0;
 
-  /**
-   * Generates a realistic physical vinyl DJ scratch audio effect modulated by drag velocity and direction
-   */
   playScratchSound(velocity: number) {
-    this.initAudioNodes();
-    if (!this.audioCtx) return;
-    const now = this.audioCtx.currentTime;
-    if (now - this.lastScratchSoundTime < 0.04) return;
-    this.lastScratchSoundTime = now;
-
     try {
+      if (!this.audioCtx) {
+        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.audioCtx = new AudioContextClass();
+      }
       const ctx = this.audioCtx;
+      const now = ctx.currentTime;
+      if (now - this.lastScratchSoundTime < 0.055) return;
+      this.lastScratchSoundTime = now;
+
       const absVel = Math.min(80, Math.max(3, Math.abs(velocity)));
       const isForward = velocity >= 0;
-      const duration = 0.05 + Math.min(0.06, absVel * 0.001);
+      const duration = 0.045 + Math.min(0.05, absVel * 0.0008);
 
-      // Vinyl groove noise friction
       const bufferSize = Math.floor(ctx.sampleRate * duration);
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
@@ -394,9 +437,8 @@ export class AudioEngine {
       bandpass.type = 'bandpass';
       const centerFreq = 700 + absVel * 22;
       bandpass.frequency.setValueAtTime(centerFreq, now);
-      bandpass.Q.setValueAtTime(2.2, now);
+      bandpass.Q.setValueAtTime(2.0, now);
 
-      // DJ Scratch Resonant Pitch Oscillator
       const osc = ctx.createOscillator();
       osc.type = 'triangle';
       const startFreq = isForward ? 220 + absVel * 6 : 420 + absVel * 10;
@@ -405,11 +447,11 @@ export class AudioEngine {
       osc.frequency.exponentialRampToValueAtTime(Math.max(40, endFreq), now + duration);
 
       const oscGain = ctx.createGain();
-      oscGain.gain.setValueAtTime(0.06, now);
+      oscGain.gain.setValueAtTime(0.05, now);
       oscGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
       const mainGain = ctx.createGain();
-      mainGain.gain.setValueAtTime(0.12, now);
+      mainGain.gain.setValueAtTime(0.1, now);
       mainGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
       noise.connect(bandpass);
@@ -427,9 +469,6 @@ export class AudioEngine {
     }
   }
 
-  /**
-   * Procedural rich offline music generator for seamless offline demo listening
-   */
   private playSynth() {
     this.initAudioNodes();
     if (!this.audioCtx) return;
@@ -448,15 +487,15 @@ export class AudioEngine {
     }
 
     const chords = [
-      [261.63, 329.63, 392.0, 523.25], // C major
-      [220.0, 261.63, 329.63, 440.0],  // A minor
-      [174.61, 220.0, 261.63, 349.23], // F major
-      [196.0, 246.94, 293.66, 392.0],  // G major
+      [261.63, 329.63, 392.0, 523.25],
+      [220.0, 261.63, 329.63, 440.0],
+      [174.61, 220.0, 261.63, 349.23],
+      [196.0, 246.94, 293.66, 392.0],
     ];
 
     let beat = 0;
     const bpm = 80;
-    const stepDuration = 60 / bpm / 2; // eighth notes
+    const stepDuration = 60 / bpm / 2;
 
     if (this.synthInterval) clearInterval(this.synthInterval);
 
@@ -469,9 +508,7 @@ export class AudioEngine {
         return;
       }
 
-      if (this.progressCallback) {
-        this.progressCallback(this.synthTime, this.synthDuration);
-      }
+      this.emitProgress(this.synthTime, this.synthDuration);
 
       const chordIdx = Math.floor((beat / 8) % chords.length);
       const chord = chords[chordIdx];
@@ -491,7 +528,6 @@ export class AudioEngine {
         osc.start();
         osc.stop(ctx.currentTime + 0.38);
 
-        // Sub bass on downbeats
         if (beat % 4 === 0) {
           const bassOsc = ctx.createOscillator();
           const bassGain = ctx.createGain();
@@ -540,7 +576,7 @@ export class AudioEngine {
     return data;
   }
 
-  onProgress(cb: (currentTime: number, duration: number) => void) {
+  onProgress(cb: ProgressListener) {
     this.progressCallback = cb;
   }
 

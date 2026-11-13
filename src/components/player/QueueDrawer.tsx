@@ -26,7 +26,7 @@ export const QueueDrawer: React.FC<QueueDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 animate-fadeIn">
       <div
         className="w-full max-w-2xl max-h-[80vh] rounded-t-3xl bg-[#141419] border-t border-white/10 shadow-2xl p-6 flex flex-col gap-4 text-neutral-200"
         style={{
